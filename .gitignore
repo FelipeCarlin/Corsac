@@ -16,3 +16,6 @@ ipch
 *.suo
 *.VC.db
 *.VC.VC.opendb
+
+## File artifacts
+verco.exe
