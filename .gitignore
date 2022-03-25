@@ -18,4 +18,7 @@ ipch
 *.VC.VC.opendb
 
 ## File artifacts
+Command Prompt.lnk
 verco.exe
+cloc.exe
+desktop.ini
