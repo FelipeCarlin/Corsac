@@ -137,12 +137,30 @@ Win32ReadEntireFile(char *Filename)
     return Result;
 }
 
+enum token_type
+{
+    TokenType_Identifier,     // Text
+    TokenType_Number,         // Number
+    TokenType_Punctuation,    // Any other character
+    
+    TokenType_EOF,            // End-of-file markers
+};
+
+struct token
+{
+    token_type TokenType;
+    token *Next;
+
+    char *Location;
+    uint32 Length;
+};
+
 internal int
 main(int ArgumentCount, char **ArgumentVector)
 {
     // NOTE(felipe): Tokenize
     char *InputFilename = ArgumentVector[1];
-
+    
     GlobalConsole = GetStdHandle(STD_OUTPUT_HANDLE);
     CONSOLE_SCREEN_BUFFER_INFO ConsoleInfo = {};
     GetConsoleScreenBufferInfo(GlobalConsole, &ConsoleInfo);
@@ -154,7 +172,83 @@ main(int ArgumentCount, char **ArgumentVector)
         
         if((char *)InputFile.Memory)
         {
-            printf("read file successfuly\n");
+            // NOTE(felipe): Tokenize file
+            token Head = {};
+            token *Current = &Head;
+            
+            char *Iterator = (char *)InputFile.Memory;
+            
+            Assert(Iterator);
+            while(*Iterator)
+            {
+                // NOTE(felipe): Skip space and new lines.
+                while(*Iterator &&
+                      (*Iterator == ' ' || *Iterator == '\t'|| *Iterator == '\n' || *Iterator == '\r'))
+                {
+                    ++Iterator;
+                }
+                
+                // TODO(felipe): More sane memory management!
+                Current->Next = (token *)malloc(sizeof(token));
+                Current = Current->Next;
+                *Current = {};
+                
+                Current->Location = Iterator;
+                
+                if((*Iterator >= 'a' && *Iterator <= 'z') ||
+                   (*Iterator >= 'A' && *Iterator <= 'Z') ||
+                   *Iterator == '_')
+                {
+                    // NOTE(felipe): Token is an Identifier.
+                    Current->TokenType = TokenType_Identifier;
+
+                    while((*Iterator >= 'a' && *Iterator <= 'z') ||
+                          (*Iterator >= 'A' && *Iterator <= 'Z') ||
+                          (*Iterator >= '0' && *Iterator <= '9') ||
+                          *Iterator == '_')
+                    {
+                        ++Iterator;
+                    }
+                }
+                else if(*Iterator >= '0' && *Iterator <= '9')
+                {
+                    // NOTE(felipe): Token is a number.
+                    Current->TokenType = TokenType_Number;
+                    
+                    while(*Iterator >= '0' && *Iterator <= '9')
+                    {
+                        ++Iterator;
+                    }
+                }
+                else
+                {
+                    Current->TokenType = TokenType_Punctuation;
+                    
+                    ++Iterator;
+                }
+                
+                Current->Length = SafeTruncateUInt64(Iterator - Current->Location);
+            }
+            
+            // NOTE(felipe): Last token is EOF.
+            Current->TokenType = TokenType_EOF;
+            
+            // DEBUG: Print produced tokens.
+            char *TokenTypes[] =
+            {
+                "Ident",
+                "Numbe",
+                "Punct",
+                "EOF  ",
+            };
+            
+            for(token *Token = Head.Next;
+                Token;
+                Token = Token->Next)
+            {
+                printf(" Token (%s): %.*s\n", TokenTypes[Token->TokenType], Token->Length, Token->Location);
+            }
+            //
         }
     }
     else

@@ -1,3 +1,3 @@
 @echo off
 
-devenv build\.vs\win32_corsac.sln
+devenv build\.vs\corsac.sln
