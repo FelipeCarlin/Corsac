@@ -8,6 +8,9 @@
 #define local_persist static
 #define global_variable static
 
+#define true 1
+#define false 0
+
 typedef uint64_t uint64;
 typedef uint32_t uint32;
 typedef uint16_t uint16;
@@ -25,13 +28,13 @@ typedef int32 bool32;
     #define Assert(X)
 #endif
 
-struct loaded_file
+typedef struct loaded_file
 {
     char *Name;
     
     void *Memory;
     uint64 Size;
-};
+} loaded_file;
 
 inline uint32
 SafeTruncateUInt64(uint64 Value)
@@ -80,7 +83,7 @@ Warning(char *Format, ...)
 internal loaded_file
 Win32ReadEntireFile(char *Filename)
 {
-    loaded_file Result = {};
+    loaded_file Result = {0};
     
     bool32 Failed = false;
     
@@ -137,7 +140,23 @@ Win32ReadEntireFile(char *Filename)
     return Result;
 }
 
-enum token_type
+internal uint64
+StringToNumber(char *Start, uint32 Lenght)
+{
+    uint64 Result = 0;
+
+    while(Lenght--)
+    {
+        Result *= 10;
+        Result += *Start - '0';
+        
+        ++Start;
+    }
+
+    return Result;
+}
+
+typedef enum token_type
 {
     TokenType_Identifier,     // Identifier or keyword
     TokenType_Punctuation,    // Any other character
@@ -146,25 +165,26 @@ enum token_type
     TokenType_String,         // String literal
     
     TokenType_EOF,            // End-of-file markers
-};
+} token_type;
 
-struct token
+typedef struct token
 {
     token_type TokenType;
-    token *Next;
-
+    struct token *Next;
+    
     char *Location;
     uint32 Length;
-};
+
+    uint64 NumericalValue;
+} token;
 
 internal int
 main(int ArgumentCount, char **ArgumentVector)
 {
-    // NOTE(felipe): Tokenize
     char *InputFilename = ArgumentVector[1];
     
     GlobalConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-    CONSOLE_SCREEN_BUFFER_INFO ConsoleInfo = {};
+    CONSOLE_SCREEN_BUFFER_INFO ConsoleInfo = {0};
     GetConsoleScreenBufferInfo(GlobalConsole, &ConsoleInfo);
     GlobalDefaultConsoleAttribute = ConsoleInfo.wAttributes;
     
@@ -175,7 +195,7 @@ main(int ArgumentCount, char **ArgumentVector)
         if((char *)InputFile.Memory)
         {
             // NOTE(felipe): Tokenize file
-            token Head = {};
+            token Head = {0};
             token *Current = &Head;
             
             char *Iterator = (char *)InputFile.Memory;
@@ -221,14 +241,18 @@ main(int ArgumentCount, char **ArgumentVector)
                         }
                     }
                 }
+                else if(*Iterator == '\\')
+                {
+                    // TODO(felipe): If escape caracter is encountered ignore newline.
+                    Iterator += 2;
+                }
                 else
                 {
                     // TODO(felipe): More sane memory management!
                     // NOTE(felipe): Allocate new token.
-                    Current->Next = (token *)malloc(sizeof(token));
+                    Current->Next = (token *)calloc(sizeof(token), 1);
                     Current = Current->Next;
-                    *Current = {};
-                
+                    
                     Current->Location = Iterator;
                 
                     if((*Iterator >= 'a' && *Iterator <= 'z') ||
@@ -255,6 +279,9 @@ main(int ArgumentCount, char **ArgumentVector)
                         {
                             ++Iterator;
                         }
+
+                        Current->NumericalValue = StringToNumber(Current->Location,
+                                                                 SafeTruncateUInt64(Iterator - Current->Location));
                     }
                     else if(*Iterator == '\"')
                     {
@@ -275,8 +302,56 @@ main(int ArgumentCount, char **ArgumentVector)
                                 ++Iterator;
                             }
                         }
-
+                        
                         ++Iterator;
+                    }
+                    else if(*Iterator == '\'')
+                    {
+                        Current->TokenType = TokenType_Number;
+
+                        // TODO(felipe): Multi-character constant? (C99 spec. 6.4.4.4p10).
+
+                        char *Start = Iterator;
+                        
+                        ++Iterator;
+                        if(*Iterator == '\\')
+                        {
+                            ++Iterator;
+                            switch(*Iterator)
+                            {
+                                case 'r': { Current->NumericalValue = '\r'; } break;
+                                case 'n': { Current->NumericalValue = '\n'; } break;
+                                case 't': { Current->NumericalValue = '\t'; } break;
+                                    
+                                case '\'': { Current->NumericalValue = '\''; } break;
+                                case '\"': { Current->NumericalValue = '\"'; } break;
+                                    
+                                case '\\': { Current->NumericalValue = '\\'; } break;
+
+                                case '0': { Current->NumericalValue = 0; } break;
+                                    
+                                default:
+                                {
+                                    Error("unknown escape sequence");
+                                } break;
+                            }
+
+                            Iterator += 2;
+                        }
+                        else
+                        {
+                            if(*(Iterator + 1) == '\'')
+                            {
+                                Current->Location = Iterator + 1;
+                                Current->Length = 1;
+                        
+                                Iterator += 2;
+                            }
+                            else
+                            {
+                                Error("invalid constant char");
+                            }
+                        }
                     }
                     else
                     {
@@ -312,6 +387,8 @@ main(int ArgumentCount, char **ArgumentVector)
                 printf(" Token (%s): %.*s\n", TokenTypes[Token->TokenType], Token->Length, Token->Location);
             }
             //
+
+            
         }
     }
     else
