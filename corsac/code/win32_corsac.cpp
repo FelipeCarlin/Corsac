@@ -187,51 +187,87 @@ main(int ArgumentCount, char **ArgumentVector)
                 {
                     ++Iterator;
                 }
-                
-                // TODO(felipe): More sane memory management!
-                Current->Next = (token *)malloc(sizeof(token));
-                Current = Current->Next;
-                *Current = {};
-                
-                Current->Location = Iterator;
-                
-                if((*Iterator >= 'a' && *Iterator <= 'z') ||
-                   (*Iterator >= 'A' && *Iterator <= 'Z') ||
-                   *Iterator == '_')
-                {
-                    // NOTE(felipe): Token is an Identifier.
-                    Current->TokenType = TokenType_Identifier;
 
-                    while((*Iterator >= 'a' && *Iterator <= 'z') ||
-                          (*Iterator >= 'A' && *Iterator <= 'Z') ||
-                          (*Iterator >= '0' && *Iterator <= '9') ||
-                          *Iterator == '_')
+                // NOTE(felipe): Ignore comments.
+                if(*Iterator == '/' && *(Iterator + 1) == '/')
+                {
+                    ++Iterator;
+                    while(*Iterator && *Iterator != '\n')
                     {
                         ++Iterator;
                     }
                 }
-                else if(*Iterator >= '0' && *Iterator <= '9')
+                else if(*Iterator == '/' && *(Iterator + 1) == '*')
                 {
-                    // NOTE(felipe): Token is a number.
-                    Current->TokenType = TokenType_Number;
-                    
-                    while(*Iterator >= '0' && *Iterator <= '9')
+                    bool32 FoundCommentEnd = false;
+                    while(!FoundCommentEnd)
                     {
                         ++Iterator;
+                        
+                        if(*Iterator && *(Iterator + 1))
+                        {
+                            if(*Iterator == '*' && *(Iterator + 1) == '/')
+                            {
+                                Iterator += 2;
+                                
+                                FoundCommentEnd = true;
+                            }
+                        }
+                        else
+                        {
+                            Error("unclosed comment");
+                        }
                     }
                 }
                 else
                 {
-                    Current->TokenType = TokenType_Punctuation;
-                    
-                    ++Iterator;
-                }
+                    // TODO(felipe): More sane memory management!
+                    // NOTE(felipe): Allocate new token.
+                    Current->Next = (token *)malloc(sizeof(token));
+                    Current = Current->Next;
+                    *Current = {};
                 
-                Current->Length = SafeTruncateUInt64(Iterator - Current->Location);
+                    Current->Location = Iterator;
+                
+                    if((*Iterator >= 'a' && *Iterator <= 'z') ||
+                       (*Iterator >= 'A' && *Iterator <= 'Z') ||
+                       *Iterator == '_')
+                    {
+                        // NOTE(felipe): Token is an Identifier.
+                        Current->TokenType = TokenType_Identifier;
+
+                        while((*Iterator >= 'a' && *Iterator <= 'z') ||
+                              (*Iterator >= 'A' && *Iterator <= 'Z') ||
+                              (*Iterator >= '0' && *Iterator <= '9') ||
+                              *Iterator == '_')
+                        {
+                            ++Iterator;
+                        }
+                    }
+                    else if(*Iterator >= '0' && *Iterator <= '9')
+                    {
+                        // NOTE(felipe): Token is a number.
+                        Current->TokenType = TokenType_Number;
+                    
+                        while(*Iterator >= '0' && *Iterator <= '9')
+                        {
+                            ++Iterator;
+                        }
+                    }
+                    else
+                    {
+                        Current->TokenType = TokenType_Punctuation;
+                    
+                        ++Iterator;
+                    }
+                
+                    Current->Length = SafeTruncateUInt64(Iterator - Current->Location);
+                }
             }
             
             // NOTE(felipe): Last token is EOF.
             Current->TokenType = TokenType_EOF;
+            
             
             // DEBUG: Print produced tokens.
             char *TokenTypes[] =
