@@ -139,9 +139,11 @@ Win32ReadEntireFile(char *Filename)
 
 enum token_type
 {
-    TokenType_Identifier,     // Text
-    TokenType_Number,         // Number
+    TokenType_Identifier,     // Identifier or keyword
     TokenType_Punctuation,    // Any other character
+    
+    TokenType_Number,         // Number literal
+    TokenType_String,         // String literal
     
     TokenType_EOF,            // End-of-file markers
 };
@@ -254,10 +256,34 @@ main(int ArgumentCount, char **ArgumentVector)
                             ++Iterator;
                         }
                     }
+                    else if(*Iterator == '\"')
+                    {
+                        // NOTE(felipe): Token is a string literal.
+                        Current->TokenType = TokenType_String;
+                        
+                        for(++Iterator;
+                            *Iterator != '\"';
+                            ++Iterator)
+                        {
+                            if(*Iterator == '\n' || *Iterator == '\0')
+                            {
+                                Error("unclosed string literal");
+                            }
+                            
+                            if(*Iterator == '\\')
+                            {
+                                ++Iterator;
+                            }
+                        }
+
+                        ++Iterator;
+                    }
                     else
                     {
                         Current->TokenType = TokenType_Punctuation;
-                    
+
+                        // TODO(felipe): Some forms of punctuation are
+                        // more than just one character e.i. '=='.
                         ++Iterator;
                     }
                 
@@ -273,8 +299,9 @@ main(int ArgumentCount, char **ArgumentVector)
             char *TokenTypes[] =
             {
                 "Ident",
-                "Numbe",
                 "Punct",
+                "Numbe",
+                "Strin",
                 "EOF  ",
             };
             
