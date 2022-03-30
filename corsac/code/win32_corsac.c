@@ -60,7 +60,7 @@ Error(char *Format, ...)
     SetConsoleTextAttribute(GlobalConsole, GlobalDefaultConsoleAttribute);
     vfprintf(stderr, Format, AP);
     fprintf(stderr, "\n");
-
+    
     va_end(AP);
     exit(0);
 }
@@ -76,7 +76,7 @@ Warning(char *Format, ...)
     SetConsoleTextAttribute(GlobalConsole, GlobalDefaultConsoleAttribute);
     vfprintf(stderr, Format, AP);
     fprintf(stderr, "\n");
-
+    
     va_end(AP);
 }
 
@@ -145,14 +145,44 @@ StringToNumber(char *Start, uint32 Lenght)
 {
     uint64 Result = 0;
 
-    while(Lenght--)
+    if(Lenght >= 3 && Start[0] == '0' && Start[1] == 'x')
     {
-        Result *= 10;
-        Result += *Start - '0';
+        Start += 2;
+        Lenght -= 2;
         
-        ++Start;
+        while(Lenght--)
+        {
+            Result *= 16;
+            
+            if(*Start >= '0' &&
+               *Start <= '9')
+            {
+                Result += *Start - '0';
+            }
+            else if(*Start >= 'a' &&
+                    *Start <= 'f')
+            {
+                Result += *Start - 'a' + 10;
+            }
+            else
+            {
+                Error("not a valid number");
+            }
+            
+            ++Start;
+        }
     }
-
+    else
+    {
+        while(Lenght--)
+        {
+            Result *= 10;
+            Result += *Start - '0';
+            
+            ++Start;
+        }
+    }
+    
     return Result;
 }
 
@@ -275,7 +305,9 @@ main(int ArgumentCount, char **ArgumentVector)
                         // NOTE(felipe): Token is a number.
                         Current->TokenType = TokenType_Number;
                     
-                        while(*Iterator >= '0' && *Iterator <= '9')
+                        while((*Iterator >= '0' && *Iterator <= '9') ||
+                              (*Iterator >= 'a' && *Iterator <= 'f') ||
+                              *Iterator == 'x')
                         {
                             ++Iterator;
                         }
@@ -387,8 +419,9 @@ main(int ArgumentCount, char **ArgumentVector)
                 printf(" Token (%s): %.*s\n", TokenTypes[Token->TokenType], Token->Length, Token->Location);
             }
             //
-
             
+            
+            // NOTE(felipe): Parsing
         }
     }
     else
