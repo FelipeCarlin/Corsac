@@ -36,7 +36,8 @@ typedef struct token
     
     char *Location;
     uint32 Length;
-
+    bool32 AtBeginningOfLine;
+    
     uint64 NumericalValue;
 } token;
 
@@ -91,6 +92,37 @@ StringDuplicate(char *String, uint32 Length)
         Destination[Length] = 0;
         MemCopy(Destination, String, Length);
         Result = Destination;
+    }
+    
+    return Result;
+}
+
+inline int32
+StringCompare(char *StringA, char *StringB, uint32 Bytes)
+{
+    int32 Result = 0;
+
+    // NOTE(felipe): chars comparison must be done un unsigned chars
+    // because the difference has to be done using two's complement.
+    uint8 CharA;
+    uint8 CharB;
+
+    while(Bytes > 0)
+    {
+        CharA = (uint8) *StringA++;
+        CharB = (uint8) *StringB++;
+        if(CharA != CharB)
+        {
+            Result = CharA - CharB;
+            break;
+        }
+        
+        if(CharA == '\0')
+        {
+            break;
+        }
+        
+        --Bytes;
     }
     
     return Result;

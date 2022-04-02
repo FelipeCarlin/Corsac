@@ -222,7 +222,9 @@ Tokenize(char *Memory, char *Filename)
 {
     token Head = {0};
     token *Current = &Head;
-            
+
+    bool32 AtBeginningOfLine = true;
+    
     char *Iterator = Memory;
     
     Assert(Iterator);
@@ -232,9 +234,14 @@ Tokenize(char *Memory, char *Filename)
         while(*Iterator &&
               (*Iterator == ' ' || *Iterator == '\t'|| *Iterator == '\n' || *Iterator == '\r'))
         {
+            if(*Iterator == '\n')
+            {
+                AtBeginningOfLine = true;
+            }
+            
             ++Iterator;
         }
-
+        
         // NOTE(felipe): Ignore comments.
         if(*Iterator == '/' && *(Iterator + 1) == '/')
         {
@@ -269,7 +276,24 @@ Tokenize(char *Memory, char *Filename)
         else if(*Iterator == '\\')
         {
             // TODO(felipe): If escape caracter is encountered ignore newline.
-            Iterator += 2;
+            ++Iterator;
+            
+            bool32 ValidSequence = false;
+            if(*Iterator == '\r')
+            {
+                ValidSequence = true;
+                ++Iterator;
+            }
+            if(*Iterator == '\n')
+            {
+                ValidSequence = true;
+                ++Iterator;
+            }
+
+            if(!ValidSequence)
+            {
+                Error("illegal escape sequence");
+            }
         }
         else
         {
@@ -280,6 +304,8 @@ Tokenize(char *Memory, char *Filename)
 
             Current->Filename = Filename;
             Current->Location = Iterator;
+            Current->AtBeginningOfLine = AtBeginningOfLine;
+            AtBeginningOfLine = false;
                 
             if((*Iterator >= 'a' && *Iterator <= 'z') ||
                (*Iterator >= 'A' && *Iterator <= 'Z') ||
@@ -445,6 +471,29 @@ PushString(string_list *List, char *String)
     ++List->Count;
 }
 
+internal void
+PushStringN(string_list *List, char *String, uint32 Length)
+{
+    string_list_element *ListElement = (string_list_element *)malloc(sizeof(string_list_element));
+    
+    if(!List->First)
+    {
+        List->First = ListElement;
+        List->Last = ListElement;
+    }
+    else
+    {
+        List->Last->Next = ListElement;
+        List->Last = ListElement;
+    }
+    
+    char *NewString = StringDuplicate(String, Length);
+    
+    ListElement->Length = Length;
+    ListElement->String = NewString;
+    ++List->Count;
+}
+
 inline bool32
 TokenIsCharacter(token *Token, char Test)
 {
@@ -485,6 +534,42 @@ StringFromToken(token *Token)
 
     Assert(Token->TokenType == TokenType_String);
     Result = StringDuplicate(Token->Location + 1, Token->Length - 2);
+    
+    return Result;
+}
+
+internal char *
+StringFromTokens(token *Token, token *End)
+{
+    // NOTE(felipe): Includes Token but not End.
+    char *Result = 0;
+
+    uint32 Length = 0;
+    for(token *Test = Token;
+        Test != End;
+        Test = Test->Next)
+    {
+        Length += Test->Length;
+    }
+
+    Result = (char *)malloc(Length + 1);
+
+    uint32 Index = 0;
+    for(token *Test = Token;
+        Test != End;
+        Test = Test->Next)
+    {
+        for(uint32 J = 0;
+            J < Test->Length;
+            ++J)
+        {
+            Result[J] = Test->Location[J];
+        }
+
+        Index += Test->Length;
+    }
+
+    Result[Index] = 0;
     
     return Result;
 }
@@ -553,6 +638,46 @@ IncludeFile(token *Token, char *Path, token *IncludeToken)
     return Result;
 }
 
+typedef struct macro
+{
+    token *Identifier;
+    
+    // NOTE(felipe): Does include Start, does not include End.
+    token *Start;
+    token *End;
+
+    struct macro *Next;
+} macro;
+
+typedef struct macro_list
+{
+    uint32 Count;
+
+    macro *First;
+    macro *Last;
+} macro_list;
+
+internal void
+PushMacro(macro_list *List, macro *SourceMacro)
+{
+    macro *ListElement = (macro *)malloc(sizeof(macro));
+    
+    if(!List->First)
+    {
+        List->First = ListElement;
+        List->Last = ListElement;
+    }
+    else
+    {
+        List->Last->Next = ListElement;
+        List->Last = ListElement;
+    }
+
+    MemCopy(ListElement, SourceMacro, sizeof(macro));
+    
+    ++List->Count;
+}
+
 internal int
 main(int ArgumentCount, char **ArgumentVector)
 {
@@ -586,24 +711,94 @@ main(int ArgumentCount, char **ArgumentVector)
             token Head = {0};
             token *Current = &Head;
 
+            macro_list Macros = {0};
+            
             token *LastToken = 0;
             while(Token->TokenType != TokenType_EOF)
             {
                 if(!TokenIsCharacter(Token, '#'))
                 {
+                    bool32 ReplacedWithMacro = false;
+                    for(macro *Macro = Macros.First;
+                        Macro;
+                        Macro = Macro->Next)
+                    {
+                        if(Token->Length == Macro->Identifier->Length &&
+                           !StringCompare(Token->Location, Macro->Identifier->Location, Token->Length))
+                        {
+                            // NOTE(felipe): Found an instance of a
+                            // macro, copy it.
+                            token *Cursor = LastToken;
+                            for (token *Iterator = Macro->Start;
+                                 Iterator != Macro->End;
+                                 Iterator = Iterator->Next)
+                            {
+                                Cursor->Next = CopyToken(Iterator);
+                                Cursor = Cursor->Next;
+
+                                Current->Next = Cursor;
+                                Current = Current->Next;
+                            }
+                            
+                            Cursor->Next = Token->Next;
+                            Token = Cursor->Next;
+                            
+                            ReplacedWithMacro = true;
+//                            Error("Macro match");
+                            break;
+                        }
+                    }
+                    
                     LastToken = Token;
-            
-                    Current->Next = Token;
-                    Current = Current->Next;
-                    Token = Token->Next;
+                    
+                    if(!ReplacedWithMacro)
+                    {
+                        Current->Next = Token;
+                        Current = Current->Next;
+                        Token = Token->Next;
+                    }
                 }
                 else
                 {
                     // NOTE(felipe): This token is a preprocessor directive.
                     token *Start = Token;
                     Token = Token->Next;
-                    
-                    if(TokenIs(Token, "include"))
+
+                    if(TokenIs(Token, "define"))
+                    {
+                        if(!Token->Next->AtBeginningOfLine)
+                        {
+                            Token = Token->Next;
+                            
+                            macro Macro = {0};
+                            Macro.Identifier = Token;
+                            
+                            Token = Token->Next;                   
+                            token *StringEnd = Token;
+                            while(!StringEnd->AtBeginningOfLine)
+                            {
+                                StringEnd = StringEnd->Next;
+                            }
+                            
+                            if(Macro.Identifier != StringEnd)
+                            {
+                                // NOTE(felipe): There is a string to
+                                // replace in every instance of identifier.
+                                
+                                Macro.Start = Token;
+                                Macro.End = StringEnd;
+
+                                Token = StringEnd;
+                            }
+
+                            PushMacro(&Macros, &Macro);
+                        }
+                        else
+                        {
+                            ErrorInToken(Token, "invalid define directive");
+                        }
+                    }
+                    else if(TokenIs(Token, "include"))
                     {
                         Token = Token->Next;
 
@@ -655,7 +850,7 @@ main(int ArgumentCount, char **ArgumentVector)
                 Token;
                 Token = Token->Next)
             {
-                printf(" Token (%s): %.*s\n", TokenTypes[Token->TokenType], Token->Length, Token->Location);
+                printf(" Token %c (%s): %.*s\n", Token->AtBeginningOfLine?'Y':'N', TokenTypes[Token->TokenType], Token->Length, Token->Location);
             }
             //
         }
