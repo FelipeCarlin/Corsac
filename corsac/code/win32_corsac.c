@@ -28,26 +28,13 @@ typedef int32 bool32;
     #define Assert(X)
 #endif
 
-typedef struct loaded_file
-{
-    char *Name;
-    
-    void *Memory;
-    uint64 Size;
-} loaded_file;
-
-inline uint32
-SafeTruncateUInt64(uint64 Value)
-{
-    // TODO(felipe): Defines for maximum values.
-    Assert(Value <= 0xFFFFFFFF);
-    uint32 Result = (uint32)Value;
-    return Result;
-}
+#include "win32_corsac.h"
 
 // TODO(felipe): Remove globals
 global_variable HANDLE GlobalConsole;
 global_variable uint16 GlobalDefaultConsoleAttribute;
+
+global_variable char *GlobalCurrentFileMemory; // NOTE(felipe): For error messages.
 
 internal void
 Error(char *Format, ...)
@@ -66,6 +53,39 @@ Error(char *Format, ...)
 }
 
 internal void
+ErrorInToken(token *Token, char *Format, ...)
+{
+    va_list AP;
+    va_start(AP, Format);
+
+    char *Line = Token->Location;
+    while(GlobalCurrentFileMemory < Line && Line[-1] != '\n' && Line[-1] != '\r')
+    {
+        --Line;
+    }
+    char *End = Token->Location;
+    while(*End && *End != '\n' && *End != '\r')
+    {
+        ++End;
+    }
+    
+    SetConsoleTextAttribute(GlobalConsole, 12); // NOTE(felipe): Reddish
+    uint32 Indent = fprintf(stderr, "error: ");
+    SetConsoleTextAttribute(GlobalConsole, GlobalDefaultConsoleAttribute);
+
+    Indent += fprintf(stderr, "%s: ", Token->Filename);
+
+    int32 Position = (uint32)(Token->Location - Line + Indent);
+    fprintf(stderr, "%.*s\n%*s^ ", (int32)(End - Line), Line, Position, "");
+    
+    vfprintf(stderr, Format, AP);
+    fprintf(stderr, "\n");
+    
+    va_end(AP);
+    exit(0);
+}
+
+internal void
 Warning(char *Format, ...)
 {
     va_list AP;
@@ -74,6 +94,38 @@ Warning(char *Format, ...)
     SetConsoleTextAttribute(GlobalConsole, 6); // NOTE(felipe): Yellowish
     fprintf(stderr, "warning: ");
     SetConsoleTextAttribute(GlobalConsole, GlobalDefaultConsoleAttribute);
+    vfprintf(stderr, Format, AP);
+    fprintf(stderr, "\n");
+    
+    va_end(AP);
+}
+
+internal void
+WarningInToken(token *Token, char *Format, ...)
+{
+    va_list AP;
+    va_start(AP, Format);
+    
+    char *Line = Token->Location;
+    while(GlobalCurrentFileMemory < Line && Line[-1] != '\n' && Line[-1] != '\r')
+    {
+        --Line;
+    }
+    char *End = Token->Location;
+    while(*End && *End != '\n' && *End != '\r')
+    {
+        ++End;
+    }
+    
+    SetConsoleTextAttribute(GlobalConsole, 6); // NOTE(felipe): Yellowish
+    uint32 Indent = fprintf(stderr, "warning: ");
+    SetConsoleTextAttribute(GlobalConsole, GlobalDefaultConsoleAttribute);
+    
+    Indent += fprintf(stderr, "%s: ", Token->Filename);
+    
+    int32 Position = (uint32)(Token->Location - Line + Indent);
+    fprintf(stderr, "%.*s\n%*s^ ", (int32)(End - Line), Line, Position, "");
+    
     vfprintf(stderr, Format, AP);
     fprintf(stderr, "\n");
     
@@ -107,34 +159,13 @@ Win32ReadEntireFile(char *Filename)
                 }
                 else
                 {
-                    // TODO(felipe): Logging.
                     VirtualFree(Result.Memory, 0, MEM_RELEASE);
                     Result.Memory = 0;
                 }
             }
-            else
-            {
-                Failed = true;
-                // TODO(felipe): Logging.
-            }
-        }
-        else
-        {
-            Failed = true;
-            // TODO(felipe): Logging.
         }
 
         CloseHandle(FileHandle);
-    }
-    else
-    {
-        Failed = true;
-        // TODO(felipe): Logging.
-    }
-    
-    if(Failed)
-    {
-        Error("cannot open: %s", Filename);
     }
     
     return Result;
@@ -186,30 +217,8 @@ StringToNumber(char *Start, uint32 Lenght)
     return Result;
 }
 
-typedef enum token_type
-{
-    TokenType_Identifier,     // Identifier or keyword
-    TokenType_Punctuation,    // Any other character
-    
-    TokenType_Number,         // Number literal
-    TokenType_String,         // String literal
-    
-    TokenType_EOF,            // End-of-file markers
-} token_type;
-
-typedef struct token
-{
-    token_type TokenType;
-    struct token *Next;
-    
-    char *Location;
-    uint32 Length;
-
-    uint64 NumericalValue;
-} token;
-
 internal token *
-Tokenize(char *Memory)
+Tokenize(char *Memory, char *Filename)
 {
     token Head = {0};
     token *Current = &Head;
@@ -268,7 +277,8 @@ Tokenize(char *Memory)
             // NOTE(felipe): Allocate new token.
             Current->Next = (token *)calloc(sizeof(token), 1);
             Current = Current->Next;
-            
+
+            Current->Filename = Filename;
             Current->Location = Iterator;
                 
             if((*Iterator >= 'a' && *Iterator <= 'z') ||
@@ -387,8 +397,9 @@ Tokenize(char *Memory)
     // NOTE(felipe): Last token is EOF.
     Current->Next = (token *)calloc(sizeof(token), 1);
     Current = Current->Next;
-
+    
     Current->TokenType = TokenType_EOF;
+    Current->Filename = Filename;
 
     return Head.Next;
 }
@@ -409,53 +420,6 @@ typedef struct string_list
     string_list_element *First;
     string_list_element *Last;
 } string_list;
-
-inline void
-MemCopy(void *Destination, void *Source, uint32 Size)
-{
-    // TODO(felipe): Max 4 Gigs.
-    for(uint32 Index = 0;
-        Index < Size;
-        ++Index)
-    {
-        *((uint8 *)Destination + Index) = *((uint8 *)Source + Index);
-    }
-}
-
-internal uint32
-StringLength(char *String)
-{
-    uint32 Result = 0;
-    if(String)
-    {
-        for(char *Character = String;
-            *Character;
-            ++Character)
-        {
-            ++Result;
-        }
-    }
-    
-    return Result;
-}
-
-internal char *
-StringDuplicate(char *String, uint32 Length)
-{
-    char *Result = 0;
-    
-    char *Destination = (char *)malloc(Length + 1);
-    
-    if(Destination)
-    {
-        // NOTE(felipe): Null termination.
-        Destination[Length] = 0;
-        MemCopy(Destination, String, Length);
-        Result = Destination;
-    }
-    
-    return Result;
-}
 
 internal void
 PushString(string_list *List, char *String)
@@ -536,7 +500,6 @@ CopyToken(token *Token)
     return T;
 }
 
-
 internal token *
 AppendToken(token *Token1, token *Token2)
 {
@@ -567,24 +530,24 @@ AppendToken(token *Token1, token *Token2)
 }
 
 internal token *
-IncludeFile(token *Token, char *Path)
+IncludeFile(token *Token, char *Path, token *IncludeToken)
 {
     token *Result = 0;
         
     loaded_file IncludeFile = Win32ReadEntireFile(Path);
     if(IncludeFile.Memory)
     {
-        token *Token2 = Tokenize(IncludeFile.Memory);
+        token *Token2 = Tokenize(IncludeFile.Memory, Path);
         if(!Token2)
         {
-            Error("could not open include file: %s", Path);
+            ErrorInToken(IncludeToken, "could not open include file: %s", Path);
         }        
         
         Result = AppendToken(Token2, Token);
     }
     else
     {
-        Error("could not open include file: %s", Path);
+        ErrorInToken(IncludeToken, "could not open include file: %s", Path);
     }
 
     return Result;
@@ -607,7 +570,7 @@ main(int ArgumentCount, char **ArgumentVector)
         if((char *)InputFile.Memory)
         {
             // NOTE(felipe): Tokenize file
-            token *Tokens = Tokenize((char *)InputFile.Memory);
+            token *Tokens = Tokenize((char *)InputFile.Memory, InputFilename);
             
             // NOTE(felipe): Preprocess
             string_list IncludeDirs = {0};
@@ -654,25 +617,30 @@ main(int ArgumentCount, char **ArgumentVector)
                         }
                         else if(TokenIsCharacter(Token, '<'))
                         {
-                            Error("unsupported <filename>");
+                            ErrorInToken(Token, "<filename> is unsupported");
                         }
                         else
                         {
-                            Error("unexpected \"filename\" or <filename>");
+                            ErrorInToken(Token, "unexpected \"filename\" or <filename>");
                         }
 
-                        Token = IncludeFile(Token, Filename);
-                       
-                        
-                        Warning("included file: %s", Filename);
+                        Token = IncludeFile(Token, Filename, Start->Next->Next);
+                    }
+                    else if(TokenIs(Token, "error"))
+                    {
+                        ErrorInToken(Token->Next, "error preprocessor directive");
+                    }
+                    else if(TokenIs(Token, "warning"))
+                    {
+                        WarningInToken(Token->Next, "warning preprocessor directive");
                     }
                     else
                     {
-                        Error("unsupported preprocessor directive");
+                        ErrorInToken(Token, "unsupported preprocessor directive");
                     }
                 }
             }
-
+            
             // DEBUG: Print produced tokens.
             char *TokenTypes[] =
                 {
