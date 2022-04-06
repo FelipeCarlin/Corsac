@@ -30,6 +30,8 @@ typedef int32 bool32;
 
 #include "win32_corsac.h"
 
+#include "corsac_parser.c"
+
 // TODO(felipe): Remove globals
 global_variable HANDLE GlobalConsole;
 global_variable uint16 GlobalDefaultConsoleAttribute;
@@ -853,6 +855,9 @@ main(int ArgumentCount, char **ArgumentVector)
                 printf(" Token %c (%s): %.*s\n", Token->AtBeginningOfLine?'Y':'N', TokenTypes[Token->TokenType], Token->Length, Token->Location);
             }
             //
+
+            // NOTE(felipe): Parse
+            ParseTokens(Head.Next);
         }
     }
     else

@@ -128,5 +128,10 @@ StringCompare(char *StringA, char *StringB, uint32 Bytes)
     return Result;
 }
 
+internal void Error(char *Format, ...);
+internal void ErrorInToken(token *Token, char *Format, ...);
+internal void Warning(char *Format, ...);
+internal void WarningInToken(token *Token, char *Format, ...);
+
 #define WIN32_CORSAC_H
 #endif
