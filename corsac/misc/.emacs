@@ -121,23 +121,26 @@
 (global-unset-key [mouse-2])
 
 ; Bright-red TODOs
- (setq fixme-modes '(c++-mode c-mode emacs-lisp-mode))
- (make-face 'font-lock-fixme-face)
- (make-face 'font-lock-study-face)
- (make-face 'font-lock-important-face)
- (make-face 'font-lock-note-face)
- (mapc (lambda (mode)
-	 (font-lock-add-keywords
-	  mode
-	  '(("\\<\\(TODO\\)" 1 'font-lock-fixme-face t)
-	    ("\\<\\(STUDY\\)" 1 'font-lock-study-face t)
-	    ("\\<\\(IMPORTANT\\)" 1 'font-lock-important-face t)
-        ("\\<\\(NOTE\\)" 1 'font-lock-note-face t))))
-	fixme-modes)
- (modify-face 'font-lock-fixme-face "Red" nil nil t nil t nil nil)
- (modify-face 'font-lock-study-face "Yellow" nil nil t nil t nil nil)
- (modify-face 'font-lock-important-face "Yellow" nil nil t nil t nil nil)
- (modify-face 'font-lock-note-face "Dark Green" nil nil t nil t nil nil)
+(setq fixme-modes '(c++-mode c-mode emacs-lisp-mode))
+(make-face 'font-lock-fixme-face)
+(make-face 'font-lock-study-face)
+(make-face 'font-lock-important-face)
+(make-face 'font-lock-note-face)
+(make-face 'font-lock-debug-face)
+(mapc (lambda (mode)
+	(font-lock-add-keywords
+	 mode
+	 '(("\\<\\(TODO\\)" 1 'font-lock-fixme-face t)
+	   ("\\<\\(STUDY\\)" 1 'font-lock-study-face t)
+	   ("\\<\\(IMPORTANT\\)" 1 'font-lock-important-face t)
+	   ("\\<\\(NOTE\\)" 1 'font-lock-note-face t)
+	   ("\\<\\(DEBUG\\)" 1 'font-lock-debug-face t))))
+       fixme-modes)
+(modify-face 'font-lock-fixme-face "Red" nil nil t nil t nil nil)
+(modify-face 'font-lock-study-face "Yellow" nil nil t nil t nil nil)
+(modify-face 'font-lock-important-face "Yellow" nil nil t nil t nil nil)
+(modify-face 'font-lock-note-face "Dark Green" nil nil t nil t nil nil)
+(modify-face 'font-lock-debug-face "Blue Violet" nil nil t nil t nil nil)
 
 ; Accepted file extensions and their appropriate modes
 (setq auto-mode-alist
@@ -247,7 +250,7 @@
      (insert "   $Date: $\n")
      (insert "   $Revision: $\n")
      (insert "   $Creator: Felipe Carlin $\n")
-     (insert "   $Notice: Copyright Â© 2022 Felipe Carlin $\n")
+     (insert "   $Notice: Copyright © 2022 Felipe Carlin $\n")
      (insert "   ======================================================================== */\n")
      (insert "\n")
      (insert "#define ")
@@ -268,7 +271,7 @@
      (insert "   $Date: $\n")
      (insert "   $Revision: $\n")
      (insert "   $Creator: Felipe Carlin $\n")
-     (insert "   $Notice: Copyright Â© 2022 Felipe Carlin $\n")
+     (insert "   $Notice: Copyright © 2022 Felipe Carlin $\n")
      (insert "   ======================================================================== */\n")
   )
 

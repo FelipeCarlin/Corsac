@@ -36,7 +36,7 @@ typedef int32 bool32;
 global_variable HANDLE GlobalConsole;
 global_variable uint16 GlobalDefaultConsoleAttribute;
 
-global_variable char *GlobalCurrentFileMemory; // NOTE(felipe): For error messages.
+//global_variable char *GlobalCurrentFileMemory; // NOTE(felipe): For error messages.
 
 internal void
 Error(char *Format, ...)
@@ -59,9 +59,9 @@ ErrorInToken(token *Token, char *Format, ...)
 {
     va_list AP;
     va_start(AP, Format);
-
+    
     char *Line = Token->Location;
-    while(GlobalCurrentFileMemory < Line && Line[-1] != '\n' && Line[-1] != '\r')
+    while(Token->SourceFile->Memory < Line && Line[-1] != '\n' && Line[-1] != '\r')
     {
         --Line;
     }
@@ -74,9 +74,9 @@ ErrorInToken(token *Token, char *Format, ...)
     SetConsoleTextAttribute(GlobalConsole, 12); // NOTE(felipe): Reddish
     uint32 Indent = fprintf(stderr, "error: ");
     SetConsoleTextAttribute(GlobalConsole, GlobalDefaultConsoleAttribute);
-
-    Indent += fprintf(stderr, "%s: ", Token->Filename);
-
+    
+    Indent += fprintf(stderr, "%s: ", Token->SourceFile->Filename);
+    
     int32 Position = (uint32)(Token->Location - Line + Indent);
     fprintf(stderr, "%.*s\n%*s^ ", (int32)(End - Line), Line, Position, "");
     
@@ -109,7 +109,7 @@ WarningInToken(token *Token, char *Format, ...)
     va_start(AP, Format);
     
     char *Line = Token->Location;
-    while(GlobalCurrentFileMemory < Line && Line[-1] != '\n' && Line[-1] != '\r')
+    while(Token->SourceFile->Memory < Line && Line[-1] != '\n' && Line[-1] != '\r')
     {
         --Line;
     }
@@ -123,7 +123,7 @@ WarningInToken(token *Token, char *Format, ...)
     uint32 Indent = fprintf(stderr, "warning: ");
     SetConsoleTextAttribute(GlobalConsole, GlobalDefaultConsoleAttribute);
     
-    Indent += fprintf(stderr, "%s: ", Token->Filename);
+    Indent += fprintf(stderr, "%s: ", Token->SourceFile->Filename);
     
     int32 Position = (uint32)(Token->Location - Line + Indent);
     fprintf(stderr, "%.*s\n%*s^ ", (int32)(End - Line), Line, Position, "");
@@ -156,7 +156,7 @@ Win32ReadEntireFile(char *Filename)
                    (FileSize32 == BytesRead))
                 {
                     // NOTE(felipe): File read succesfully.
-                    Result.Name = Filename;
+                    Result.Filename = Filename;
                     Result.Size = FileSize32;
                 }
                 else
@@ -220,14 +220,14 @@ StringToNumber(char *Start, uint32 Lenght)
 }
 
 internal token *
-Tokenize(char *Memory, char *Filename)
+Tokenize(loaded_file *File)
 {
     token Head = {0};
     token *Current = &Head;
 
     bool32 AtBeginningOfLine = true;
     
-    char *Iterator = Memory;
+    char *Iterator = File->Memory;
     
     Assert(Iterator);
     while(*Iterator)
@@ -304,7 +304,7 @@ Tokenize(char *Memory, char *Filename)
             Current->Next = (token *)calloc(sizeof(token), 1);
             Current = Current->Next;
 
-            Current->Filename = Filename;
+            Current->SourceFile = File;
             Current->Location = Iterator;
             Current->AtBeginningOfLine = AtBeginningOfLine;
             AtBeginningOfLine = false;
@@ -412,10 +412,25 @@ Tokenize(char *Memory, char *Filename)
             else
             {
                 Current->TokenType = TokenType_Punctuation;
-
-                // TODO(felipe): Some forms of punctuation are
+                
+                // NOTE(felipe): Some forms of punctuation are
                 // more than just one character e.i. '=='.
-                ++Iterator;
+                if(*Iterator == '=' &&
+                   (*(Iterator + 1) == '=' ||
+                    *(Iterator + 1) == '<' ||
+                    *(Iterator + 1) == '>'))
+                {
+                    Iterator += 2;
+                }
+                else if(*Iterator == '!' &&
+                        *(Iterator + 1) == '=')
+                {
+                    Iterator += 2;
+                }    
+                else
+                {
+                    ++Iterator;
+                }
             }
             
             Current->Length = SafeTruncateUInt64(Iterator - Current->Location);
@@ -427,7 +442,7 @@ Tokenize(char *Memory, char *Filename)
     Current = Current->Next;
     
     Current->TokenType = TokenType_EOF;
-    Current->Filename = Filename;
+    Current->SourceFile = File;
 
     return Head.Next;
 }
@@ -624,7 +639,7 @@ IncludeFile(token *Token, char *Path, token *IncludeToken)
     loaded_file IncludeFile = Win32ReadEntireFile(Path);
     if(IncludeFile.Memory)
     {
-        token *Token2 = Tokenize(IncludeFile.Memory, Path);
+        token *Token2 = Tokenize(&IncludeFile);
         if(!Token2)
         {
             ErrorInToken(IncludeToken, "could not open include file: %s", Path);
@@ -697,7 +712,7 @@ main(int ArgumentCount, char **ArgumentVector)
         if((char *)InputFile.Memory)
         {
             // NOTE(felipe): Tokenize file
-            token *Tokens = Tokenize((char *)InputFile.Memory, InputFilename);
+            token *Tokens = Tokenize(&InputFile);
             
             // NOTE(felipe): Preprocess
             string_list IncludeDirs = {0};

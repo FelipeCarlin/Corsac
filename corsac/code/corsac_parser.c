@@ -1,14 +1,21 @@
 
 typedef enum ast_node_type
 {
-    ASTNodeType_Number,      // Integer
+    ASTNodeType_Number,       // Integer
     
-    ASTNodeType_Negate,      // Unary -
+    ASTNodeType_Negate,       // Unary -
+    
+    ASTNodeType_Add,          // Binary addition
+    ASTNodeType_Sub,          // Binary subtraction
+    ASTNodeType_Multiply,     // Binary multiply
+    ASTNodeType_Divide,       // Binary divide
+    
+    ASTNodeType_Equal,        // Comparison ==
+    ASTNodeType_NotEqual,     // Comparison !=
+    ASTNodeType_LessThan,     // Comparison <
+    ASTNodeType_LessEqual,    // Comparison <=
 
-    ASTNodeType_Add,         // Binary addition
-    ASTNodeType_Sub,         // Binary subtraction
-    ASTNodeType_Multiply,    // Binary multiply
-    ASTNodeType_Divide,      // Binary divide
+    ASTNodeType_Count,        // Internal use, boundry checking.
 } ast_node_type;
 
 typedef struct ast_node
@@ -44,13 +51,33 @@ NewBinaryNode(ast_node_type NodeType, ast_node *LeftHandSide, ast_node *RightHan
     return Result;
 }
 
-// Primary = Number
+// Ensure that the current token is `s`.
+inline token *
+AssertNext(token *Token, char *S)
+{
+    if(!TokenIs(Token, S))
+    {
+        ErrorInToken(Token, "expected '%s'", S);
+    }
+    
+    return Token->Next;
+}
+
+internal ast_node *Expression(token *Token, token **Rest);
+
+// Primary = "(" Expression ")"
+//         | Number
 internal ast_node *
 Primary(token *Token, token **Rest)
 {
     ast_node *Result = 0;
 
-    if(Token->TokenType == TokenType_Number)
+    if(TokenIs(Token, "("))
+    {
+        Result = Expression(Token->Next, &Token);
+        *Rest = AssertNext(Token, ")");
+    }
+    else if(Token->TokenType == TokenType_Number)
     {
         Result = NewNode(ASTNodeType_Number);
         Result->Token = Token;
@@ -117,9 +144,9 @@ Multiply(token *Token, token **Rest)
     return Result;
 }
 
-// Expression = Multiply ("+" Multiply | "-" Multiply)*
+// Add = Multiply ("+" Multiply | "-" Multiply)*
 internal ast_node *
-Expression(token *Token, token **Rest)
+Add(token *Token, token **Rest)
 {
     ast_node *Result = Multiply(Token, &Token);
     
@@ -143,6 +170,75 @@ Expression(token *Token, token **Rest)
     return Result;
 }
 
+// Relational = Add ("<" Add | "<=" Add | ">" Add | ">=" Add)*
+internal ast_node *
+Relational(token *Token, token **Rest)
+{
+    ast_node *Result = Add(Token, &Token);
+
+    for(;;)
+    {
+        if(TokenIs(Token, "<"))
+        {
+            Result = NewBinaryNode(ASTNodeType_LessThan, Result, Add(Token->Next, &Token));
+        }
+        else if(TokenIs(Token, "<="))
+        {
+            Result = NewBinaryNode(ASTNodeType_LessEqual, Result, Add(Token->Next, &Token));
+        }
+        if(TokenIs(Token, ">"))
+        {
+            Result = NewBinaryNode(ASTNodeType_LessThan, Add(Token->Next, &Token), Result);
+        }
+        else if(TokenIs(Token, ">="))
+        {
+            Result = NewBinaryNode(ASTNodeType_LessEqual, Add(Token->Next, &Token), Result);
+        }
+        else
+        {
+            *Rest = Token;
+            break;
+        }
+    }
+
+    return Result;
+}
+
+// Equality = Relational ("==" Relational | "!=" Relational)*
+internal ast_node *
+Equality(token *Token, token **Rest)
+{
+    ast_node *Result = Relational(Token, &Token);
+
+    for(;;)
+    {
+        if(TokenIs(Token, "=="))
+        {
+            Result = NewBinaryNode(ASTNodeType_Equal, Result, Relational(Token->Next, &Token));
+        }
+        else if(TokenIs(Token, "!="))
+        {
+            Result = NewBinaryNode(ASTNodeType_NotEqual, Result, Relational(Token->Next, &Token));
+        }
+        else
+        {
+            *Rest = Token;
+            break;
+        }
+    }
+
+    return Result;
+}
+
+// Expression = Equality
+internal ast_node *
+Expression(token *Token, token **Rest)
+{
+    ast_node *Result = Equality(Token, Rest);
+
+    return Result;
+}
+
 char *NodeTypes[] =
 {
     "Number",
@@ -153,6 +249,11 @@ char *NodeTypes[] =
     "Sub   ",
     "Mul   ",
     "Div   ",
+        
+    "Equal ",
+    "NotEqu",
+    "LessTh",
+    "LessEq",
 };
 
 uint32 LastDepth = 0;
@@ -175,7 +276,7 @@ PrintASTNode(ast_node *Node, uint32 Depth)
                 printf("| ");
             }
             
-            printf("\n");
+            printf("\n ");
         }
         
         for(uint32 I = 0;
@@ -191,7 +292,8 @@ PrintASTNode(ast_node *Node, uint32 Depth)
                 printf("| ");
             }
         }
-        
+
+        Assert(Node->NodeType < ASTNodeType_Count);
         printf("Node: type: %s", NodeTypes[Node->NodeType]);
         
         printf("\n");
@@ -216,7 +318,7 @@ ParseTokens(token *Tokens)
     
     ast_node *Nodes = Expression(Token, &Token);
     
-    // DEBUG: Print AST nodes.
+    // DEBUG: Print AST node tree.
     printf("\nAST\n");
     for(ast_node *Node = Nodes;
         Node;

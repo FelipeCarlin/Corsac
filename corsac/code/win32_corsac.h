@@ -10,7 +10,7 @@
 
 typedef struct loaded_file
 {
-    char *Name;
+    char *Filename;
     
     void *Memory;
     uint64 Size;
@@ -32,7 +32,8 @@ typedef struct token
     token_type TokenType;
     struct token *Next;
 
-    char *Filename;
+//    char *Filename;
+    loaded_file *SourceFile;
     
     char *Location;
     uint32 Length;
