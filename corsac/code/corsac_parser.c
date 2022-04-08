@@ -1,36 +1,5 @@
 
-typedef enum ast_node_type
-{
-    ASTNodeType_Number,       // Integer
-    
-    ASTNodeType_Negate,       // Unary -
-    
-    ASTNodeType_Add,          // Binary addition
-    ASTNodeType_Sub,          // Binary subtraction
-    ASTNodeType_Multiply,     // Binary multiply
-    ASTNodeType_Divide,       // Binary divide
-    
-    ASTNodeType_Equal,        // Comparison ==
-    ASTNodeType_NotEqual,     // Comparison !=
-    ASTNodeType_LessThan,     // Comparison <
-    ASTNodeType_LessEqual,    // Comparison <=
-
-    ASTNodeType_Count,        // Internal use, boundry checking.
-} ast_node_type;
-
-typedef struct ast_node
-{
-    ast_node_type NodeType;
-    
-    struct ast_node *Next;
-    struct ast_node *LeftHandSide;
-    struct ast_node *RightHandSide;
-    
-    uint64 NumericalValue;
-    
-    // NOTE(felipe): Representative token for nicer error logging.
-    token *Token;
-} ast_node;
+#include "corsac_parser.h"
 
 inline ast_node *
 NewNode(ast_node_type NodeType)
@@ -66,6 +35,7 @@ AssertNext(token *Token, char *S)
 internal ast_node *Expression(token *Token, token **Rest);
 
 // Primary = "(" Expression ")"
+//         | Identifier
 //         | Number
 internal ast_node *
 Primary(token *Token, token **Rest)
@@ -76,6 +46,12 @@ Primary(token *Token, token **Rest)
     {
         Result = Expression(Token->Next, &Token);
         *Rest = AssertNext(Token, ")");
+    }
+    else if(Token->TokenType == TokenType_Identifier)
+    {
+        Result = NewNode(ASTNodeType_Variable);
+        Result->VariableName = *Token->Location;
+        *Rest = Token->Next;
     }
     else if(Token->TokenType == TokenType_Number)
     {
@@ -209,7 +185,7 @@ internal ast_node *
 Equality(token *Token, token **Rest)
 {
     ast_node *Result = Relational(Token, &Token);
-
+    
     for(;;)
     {
         if(TokenIs(Token, "=="))
@@ -226,17 +202,85 @@ Equality(token *Token, token **Rest)
             break;
         }
     }
+    
+    return Result;
+}
+
+// Assign = Equality ("=" Assign)?
+internal ast_node *
+Assign(token *Token, token **Rest)
+{
+    ast_node *Result = Equality(Token, &Token);
+    
+    if(TokenIs(Token, "="))
+    {
+        Result = NewBinaryNode(ASTNodeType_Assign, Result, Assign(Token->Next, &Token));
+    }
+    
+    *Rest = Token;
 
     return Result;
 }
 
-// Expression = Equality
+// Expression = Assign
 internal ast_node *
 Expression(token *Token, token **Rest)
 {
-    ast_node *Result = Equality(Token, Rest);
+    ast_node *Result = Assign(Token, Rest);
 
     return Result;
+}
+
+// Expression-Statement = ";"
+//                      | Expression-Statement ";"
+internal ast_node *
+ExpressionStatement(token *Token, token **Rest)
+{
+    ast_node *Result = 0;
+    
+    if(TokenIs(Token, ";"))
+    {
+        ErrorInToken(Token, "blank expressions are not supported");
+        
+#if 0
+        Result = NewNode(NodeType_Block, Token);
+        *Rest = Token->Next;
+#endif
+    }
+    else
+    {
+        Result = NewNode(ASTNodeType_Expression_Statement);
+        Result->LeftHandSide = Expression(Token, &Token);
+        
+        *Rest = AssertNext(Token, ";");
+    }
+    
+    return Result;
+}
+
+// Statement = Expresion-Statement
+internal ast_node *
+Statement(token *Token, token **Rest)
+{
+    ast_node *Result = ExpressionStatement(Token, Rest);
+
+    return Result;    
+}
+
+// Program = Statement*
+internal ast_node *
+Program(token *Token, token **Rest)
+{        
+    ast_node Head = {0};
+    ast_node *Current = &Head;
+    
+    while(Token->TokenType != TokenType_EOF)
+    {
+        Current->Next = Statement(Token, &Token);
+        Current = Current->Next;
+    }
+
+    return Head.Next;
 }
 
 char *NodeTypes[] =
@@ -254,6 +298,12 @@ char *NodeTypes[] =
     "NotEqu",
     "LessTh",
     "LessEq",
+
+    "Assign",
+    
+    "ExpStm",
+
+    "Variab",
 };
 
 uint32 LastDepth = 0;
@@ -261,6 +311,8 @@ uint32 LastDepth = 0;
 internal void
 PrintASTNode(ast_node *Node, uint32 Depth)
 {
+    Assert(ArrayCount(NodeTypes) == ASTNodeType_Count);
+    
     // NOTE(felipe): It's debug code, don't worry.
     for(;
         Node;
@@ -292,8 +344,7 @@ PrintASTNode(ast_node *Node, uint32 Depth)
                 printf("| ");
             }
         }
-
-        Assert(Node->NodeType < ASTNodeType_Count);
+        
         printf("Node: type: %s", NodeTypes[Node->NodeType]);
         
         printf("\n");
@@ -315,15 +366,10 @@ internal void
 ParseTokens(token *Tokens)
 {
     token *Token = Tokens;
-    
-    ast_node *Nodes = Expression(Token, &Token);
+
+    ast_node *Nodes = Program(Token, &Token);
     
     // DEBUG: Print AST node tree.
     printf("\nAST\n");
-    for(ast_node *Node = Nodes;
-        Node;
-        Node = Node->Next)
-    {
-        PrintASTNode(Node, 1);
-    }
+    PrintASTNode(Nodes, 1);
 }

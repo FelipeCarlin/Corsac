@@ -28,6 +28,11 @@ typedef int32 bool32;
     #define Assert(X)
 #endif
 
+#define InvalidCodePath Assert(!"InvalidCodePath")
+
+#define ArrayCount(A) (sizeof(A) / sizeof((A)[0]))
+
+
 #include "win32_corsac.h"
 
 #include "corsac_parser.c"
@@ -61,14 +66,29 @@ ErrorInToken(token *Token, char *Format, ...)
     va_start(AP, Format);
     
     char *Line = Token->Location;
-    while(Token->SourceFile->Memory < Line && Line[-1] != '\n' && Line[-1] != '\r')
-    {
-        --Line;
-    }
     char *End = Token->Location;
-    while(*End && *End != '\n' && *End != '\r')
+    
+    if(Token->TokenType != TokenType_EOF)
     {
-        ++End;
+        while(Token->SourceFile->Memory < Line && Line[-1] != '\n' && Line[-1] != '\r')
+        {
+            --Line;
+        }
+        
+        while(*End && *End != '\n' && *End != '\r')
+        {
+            ++End;
+        }
+    }
+    else
+    {
+        Line = (uint8 *)Token->SourceFile->Memory + Token->SourceFile->Size - 1;
+        while(*Line && Line > Token->SourceFile->Memory && *Line != '\n' && *Line != '\r')
+        {
+            --Line;
+        }
+        
+        End = (uint8 *)Token->SourceFile->Memory + Token->SourceFile->Size;
     }
     
     SetConsoleTextAttribute(GlobalConsole, 12); // NOTE(felipe): Reddish
@@ -77,7 +97,7 @@ ErrorInToken(token *Token, char *Format, ...)
     
     Indent += fprintf(stderr, "%s: ", Token->SourceFile->Filename);
     
-    int32 Position = (uint32)(Token->Location - Line + Indent);
+    int32 Position = (uint32)((Token->Location ? Token->Location - Line : End - Line) + Indent);
     fprintf(stderr, "%.*s\n%*s^ ", (int32)(End - Line), Line, Position, "");
     
     vfprintf(stderr, Format, AP);
@@ -243,197 +263,200 @@ Tokenize(loaded_file *File)
             
             ++Iterator;
         }
-        
-        // NOTE(felipe): Ignore comments.
-        if(*Iterator == '/' && *(Iterator + 1) == '/')
-        {
-            ++Iterator;
-            while(*Iterator && *Iterator != '\n')
-            {
-                ++Iterator;
-            }
-        }
-        else if(*Iterator == '/' && *(Iterator + 1) == '*')
-        {
-            bool32 FoundCommentEnd = false;
-            while(!FoundCommentEnd)
-            {
-                ++Iterator;
-                        
-                if(*Iterator && *(Iterator + 1))
-                {
-                    if(*Iterator == '*' && *(Iterator + 1) == '/')
-                    {
-                        Iterator += 2;
-                                
-                        FoundCommentEnd = true;
-                    }
-                }
-                else
-                {
-                    Error("unclosed comment");
-                }
-            }
-        }
-        else if(*Iterator == '\\')
-        {
-            // TODO(felipe): If escape caracter is encountered ignore newline.
-            ++Iterator;
-            
-            bool32 ValidSequence = false;
-            if(*Iterator == '\r')
-            {
-                ValidSequence = true;
-                ++Iterator;
-            }
-            if(*Iterator == '\n')
-            {
-                ValidSequence = true;
-                ++Iterator;
-            }
 
-            if(!ValidSequence)
-            {
-                Error("illegal escape sequence");
-            }
-        }
-        else
+        if(*Iterator)
         {
-            // TODO(felipe): More sane memory management!
-            // NOTE(felipe): Allocate new token.
-            Current->Next = (token *)calloc(sizeof(token), 1);
-            Current = Current->Next;
-
-            Current->SourceFile = File;
-            Current->Location = Iterator;
-            Current->AtBeginningOfLine = AtBeginningOfLine;
-            AtBeginningOfLine = false;
-                
-            if((*Iterator >= 'a' && *Iterator <= 'z') ||
-               (*Iterator >= 'A' && *Iterator <= 'Z') ||
-               *Iterator == '_')
+            // NOTE(felipe): Ignore comments.
+            if(*Iterator == '/' && *(Iterator + 1) == '/')
             {
-                // NOTE(felipe): Token is an Identifier.
-                Current->TokenType = TokenType_Identifier;
-                
-                while((*Iterator >= 'a' && *Iterator <= 'z') ||
-                      (*Iterator >= 'A' && *Iterator <= 'Z') ||
-                      (*Iterator >= '0' && *Iterator <= '9') ||
-                      *Iterator == '_')
+                ++Iterator;
+                while(*Iterator && *Iterator != '\n')
                 {
                     ++Iterator;
                 }
             }
-            else if(*Iterator >= '0' && *Iterator <= '9')
+            else if(*Iterator == '/' && *(Iterator + 1) == '*')
             {
-                // NOTE(felipe): Token is a number.
-                Current->TokenType = TokenType_Number;
-                    
-                while((*Iterator >= '0' && *Iterator <= '9') ||
-                      (*Iterator >= 'a' && *Iterator <= 'f') ||
-                      *Iterator == 'x')
+                bool32 FoundCommentEnd = false;
+                while(!FoundCommentEnd)
                 {
                     ++Iterator;
-                }
-
-                Current->NumericalValue = StringToNumber(Current->Location,
-                                                         SafeTruncateUInt64(Iterator - Current->Location));
-            }
-            else if(*Iterator == '\"')
-            {
-                // NOTE(felipe): Token is a string literal.
-                Current->TokenType = TokenType_String;
                         
-                for(++Iterator;
-                    *Iterator != '\"';
-                    ++Iterator)
-                {
-                    if(*Iterator == '\n' || *Iterator == '\0')
+                    if(*Iterator && *(Iterator + 1))
                     {
-                        Error("unclosed string literal");
-                    }
-                            
-                    if(*Iterator == '\\')
-                    {
-                        ++Iterator;
-                    }
-                }
-                        
-                ++Iterator;
-            }
-            else if(*Iterator == '\'')
-            {
-                Current->TokenType = TokenType_Number;
-
-                // TODO(felipe): Multi-character constant? (C99 spec. 6.4.4.4p10).
-
-                char *Start = Iterator;
-                        
-                ++Iterator;
-                if(*Iterator == '\\')
-                {
-                    ++Iterator;
-                    switch(*Iterator)
-                    {
-                        case 'r': { Current->NumericalValue = '\r'; } break;
-                        case 'n': { Current->NumericalValue = '\n'; } break;
-                        case 't': { Current->NumericalValue = '\t'; } break;
-                                    
-                        case '\'': { Current->NumericalValue = '\''; } break;
-                        case '\"': { Current->NumericalValue = '\"'; } break;
-                            
-                        case '\\': { Current->NumericalValue = '\\'; } break;
-                            
-                        case '0': { Current->NumericalValue = 0; } break;
-                            
-                        default:
+                        if(*Iterator == '*' && *(Iterator + 1) == '/')
                         {
-                            Error("unknown escape sequence");
-                        } break;
-                    }
-                    
-                    Iterator += 2;
-                }
-                else
-                {
-                    if(*(Iterator + 1) == '\'')
-                    {
-                        Current->Location = Iterator + 1;
-                        Current->Length = 1;
-                        
-                        Iterator += 2;
+                            Iterator += 2;
+                                
+                            FoundCommentEnd = true;
+                        }
                     }
                     else
                     {
-                        Error("invalid constant char");
+                        Error("unclosed comment");
                     }
+                }
+            }
+            else if(*Iterator == '\\')
+            {
+                // TODO(felipe): If escape caracter is encountered ignore newline.
+                ++Iterator;
+            
+                bool32 ValidSequence = false;
+                if(*Iterator == '\r')
+                {
+                    ValidSequence = true;
+                    ++Iterator;
+                }
+                if(*Iterator == '\n')
+                {
+                    ValidSequence = true;
+                    ++Iterator;
+                }
+
+                if(!ValidSequence)
+                {
+                    Error("illegal escape sequence");
                 }
             }
             else
             {
-                Current->TokenType = TokenType_Punctuation;
+                // TODO(felipe): More sane memory management!
+                // NOTE(felipe): Allocate new token.
+                Current->Next = (token *)calloc(sizeof(token), 1);
+                Current = Current->Next;
+
+                Current->SourceFile = File;
+                Current->Location = Iterator;
+                Current->AtBeginningOfLine = AtBeginningOfLine;
+                AtBeginningOfLine = false;
                 
-                // NOTE(felipe): Some forms of punctuation are
-                // more than just one character e.i. '=='.
-                if(*Iterator == '=' &&
-                   (*(Iterator + 1) == '=' ||
-                    *(Iterator + 1) == '<' ||
-                    *(Iterator + 1) == '>'))
+                if((*Iterator >= 'a' && *Iterator <= 'z') ||
+                   (*Iterator >= 'A' && *Iterator <= 'Z') ||
+                   *Iterator == '_')
                 {
-                    Iterator += 2;
+                    // NOTE(felipe): Token is an Identifier.
+                    Current->TokenType = TokenType_Identifier;
+                
+                    while((*Iterator >= 'a' && *Iterator <= 'z') ||
+                          (*Iterator >= 'A' && *Iterator <= 'Z') ||
+                          (*Iterator >= '0' && *Iterator <= '9') ||
+                          *Iterator == '_')
+                    {
+                        ++Iterator;
+                    }
                 }
-                else if(*Iterator == '!' &&
-                        *(Iterator + 1) == '=')
+                else if(*Iterator >= '0' && *Iterator <= '9')
                 {
-                    Iterator += 2;
-                }    
-                else
+                    // NOTE(felipe): Token is a number.
+                    Current->TokenType = TokenType_Number;
+                    
+                    while((*Iterator >= '0' && *Iterator <= '9') ||
+                          (*Iterator >= 'a' && *Iterator <= 'f') ||
+                          *Iterator == 'x')
+                    {
+                        ++Iterator;
+                    }
+
+                    Current->NumericalValue = StringToNumber(Current->Location,
+                                                             SafeTruncateUInt64(Iterator - Current->Location));
+                }
+                else if(*Iterator == '\"')
                 {
+                    // NOTE(felipe): Token is a string literal.
+                    Current->TokenType = TokenType_String;
+                        
+                    for(++Iterator;
+                        *Iterator != '\"';
+                        ++Iterator)
+                    {
+                        if(*Iterator == '\n' || *Iterator == '\0')
+                        {
+                            Error("unclosed string literal");
+                        }
+                            
+                        if(*Iterator == '\\')
+                        {
+                            ++Iterator;
+                        }
+                    }
+                        
                     ++Iterator;
                 }
-            }
+                else if(*Iterator == '\'')
+                {
+                    Current->TokenType = TokenType_Number;
+
+                    // TODO(felipe): Multi-character constant? (C99 spec. 6.4.4.4p10).
+
+                    char *Start = Iterator;
+                        
+                    ++Iterator;
+                    if(*Iterator == '\\')
+                    {
+                        ++Iterator;
+                        switch(*Iterator)
+                        {
+                            case 'r': { Current->NumericalValue = '\r'; } break;
+                            case 'n': { Current->NumericalValue = '\n'; } break;
+                            case 't': { Current->NumericalValue = '\t'; } break;
+                                    
+                            case '\'': { Current->NumericalValue = '\''; } break;
+                            case '\"': { Current->NumericalValue = '\"'; } break;
+                            
+                            case '\\': { Current->NumericalValue = '\\'; } break;
+                            
+                            case '0': { Current->NumericalValue = 0; } break;
+                            
+                            default:
+                            {
+                                Error("unknown escape sequence");
+                            } break;
+                        }
+                    
+                        Iterator += 2;
+                    }
+                    else
+                    {
+                        if(*(Iterator + 1) == '\'')
+                        {
+                            Current->Location = Iterator + 1;
+                            Current->Length = 1;
+                        
+                            Iterator += 2;
+                        }
+                        else
+                        {
+                            Error("invalid constant char");
+                        }
+                    }
+                }
+                else
+                {
+                    Current->TokenType = TokenType_Punctuation;
+                
+                    // NOTE(felipe): Some forms of punctuation are
+                    // more than just one character e.i. '=='.
+                    if(*Iterator == '=' &&
+                       (*(Iterator + 1) == '=' ||
+                        *(Iterator + 1) == '<' ||
+                        *(Iterator + 1) == '>'))
+                    {
+                        Iterator += 2;
+                    }
+                    else if(*Iterator == '!' &&
+                            *(Iterator + 1) == '=')
+                    {
+                        Iterator += 2;
+                    }    
+                    else
+                    {
+                        ++Iterator;
+                    }
+                }
             
-            Current->Length = SafeTruncateUInt64(Iterator - Current->Location);
+                Current->Length = SafeTruncateUInt64(Iterator - Current->Location);
+            }
         }
     }
             
@@ -879,6 +902,10 @@ main(int ArgumentCount, char **ArgumentVector)
     {
         Error("no input files");
     }
+        
+    SetConsoleTextAttribute(GlobalConsole, 2); // NOTE(felipe): Cyan
+    fprintf(stdout, "\nsuccess\n");
+    SetConsoleTextAttribute(GlobalConsole, GlobalDefaultConsoleAttribute);
     
     return 0;
 }
