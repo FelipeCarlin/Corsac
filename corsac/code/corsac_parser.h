@@ -7,6 +7,14 @@
    $Notice: Copyright © 2022 Felipe Carlin $
    ======================================================================== */
 
+
+// NOTE(felipe): Variables.
+typedef struct object
+{
+    char *Name;
+    struct object *Next;
+} object;
+
 typedef enum ast_node_type
 {
     ASTNodeType_Number,                  // Integer
@@ -28,8 +36,10 @@ typedef enum ast_node_type
     ASTNodeType_Expression_Statement,    // Expression ";"
 
     ASTNodeType_Variable,                // Variable
+
+//    ASTNodeType_Function,                // Function definition
     
-    ASTNodeType_Count,                   // Internal use, boundry checking.
+    ASTNodeType_Count,                   // Internal use, boundry checking
 } ast_node_type;
 
 typedef struct ast_node
@@ -41,7 +51,8 @@ typedef struct ast_node
     struct ast_node *RightHandSide;
     
     uint64 NumericalValue;
-    char VariableName;
+
+    object *Variable;
     
     // NOTE(felipe): Representative token for nicer error logging.
     token *Token;

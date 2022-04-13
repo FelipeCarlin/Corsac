@@ -1,3 +1,10 @@
+/* ========================================================================
+   $File: $
+   $Date: $
+   $Revision: $
+   $Creator: Felipe Carlin $
+   $Notice: Copyright © 2022 Felipe Carlin $
+   ======================================================================== */
 
 #include "corsac_parser.h"
 
@@ -34,6 +41,30 @@ AssertNext(token *Token, char *S)
 
 internal ast_node *Expression(token *Token, token **Rest);
 
+// TODO(felipe): Remove globals.
+global_variable object GlobalVariablesHead = {0};
+global_variable object *GlobalVariables = &GlobalVariablesHead;
+
+// Find a local variable by name.
+internal object *
+GetVariable(token *Token)
+{
+    object *Result = 0;
+    
+    for(object *Variable = GlobalVariablesHead.Next;
+        Variable;
+        Variable = Variable->Next)
+    {
+        if(StringLength(Variable->Name) == Token->Length && !StringCompare(Token->Location, Variable->Name, Token->Length))
+        {
+            Result = Variable;
+        }
+    }
+    
+    return Result;
+}
+
+
 // Primary = "(" Expression ")"
 //         | Identifier
 //         | Number
@@ -50,7 +81,20 @@ Primary(token *Token, token **Rest)
     else if(Token->TokenType == TokenType_Identifier)
     {
         Result = NewNode(ASTNodeType_Variable);
-        Result->VariableName = *Token->Location;
+
+        // NOTE(felipe): Check if variable already exists.
+        object *Variable = GetVariable(Token);
+        if(!Variable)
+        {
+            Variable = calloc(1, sizeof(object));
+            Variable->Name = StringDuplicate(Token->Location, Token->Length);
+            
+            GlobalVariables->Next = Variable;
+            GlobalVariables = Variable;
+        }
+
+        Result->Variable = Variable;
+        
         *Rest = Token->Next;
     }
     else if(Token->TokenType == TokenType_Number)
@@ -232,7 +276,7 @@ Expression(token *Token, token **Rest)
 }
 
 // Expression-Statement = ";"
-//                      | Expression-Statement ";"
+//                      | Expression ";"
 internal ast_node *
 ExpressionStatement(token *Token, token **Rest)
 {
@@ -346,6 +390,19 @@ PrintASTNode(ast_node *Node, uint32 Depth)
         }
         
         printf("Node: type: %s", NodeTypes[Node->NodeType]);
+
+        switch(Node->NodeType)
+        {
+            case ASTNodeType_Number:
+            {
+                printf(" (%lld)", Node->NumericalValue);
+            } break;
+
+            case ASTNodeType_Variable:
+            {
+                printf(" (%s)", Node->Variable->Name);                
+            } break;
+        }
         
         printf("\n");
         
@@ -368,8 +425,17 @@ ParseTokens(token *Tokens)
     token *Token = Tokens;
 
     ast_node *Nodes = Program(Token, &Token);
+
+    // DEBUG(felipe): Print variables
+    printf("\nVariables\n");
+    for(object *Variable = GlobalVariablesHead.Next;
+        Variable;
+        Variable = Variable->Next)
+    {
+        printf("- %s\n", Variable->Name);
+    }
     
-    // DEBUG: Print AST node tree.
+    // DEBUG(felipe): Print AST node tree.
     printf("\nAST\n");
     PrintASTNode(Nodes, 1);
 }
