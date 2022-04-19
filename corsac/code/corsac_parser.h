@@ -34,10 +34,10 @@ typedef enum ast_node_type
     ASTNodeType_Assign,                  // =
     
     ASTNodeType_Expression_Statement,    // Expression ";"
-
+    ASTNodeType_Block,                   // { ... }
+    
     ASTNodeType_Variable,                // Variable
-
-//    ASTNodeType_Function,                // Function definition
+    ASTNodeType_Function,                // Function definition
     
     ASTNodeType_Count,                   // Internal use, boundry checking
 } ast_node_type;
@@ -49,6 +49,8 @@ typedef struct ast_node
     struct ast_node *Next;
     struct ast_node *LeftHandSide;
     struct ast_node *RightHandSide;
+
+    struct ast_node *Body;
     
     uint64 NumericalValue;
 

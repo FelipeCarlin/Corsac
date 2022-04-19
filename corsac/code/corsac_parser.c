@@ -81,7 +81,7 @@ Primary(token *Token, token **Rest)
     else if(Token->TokenType == TokenType_Identifier)
     {
         Result = NewNode(ASTNodeType_Variable);
-
+        
         // NOTE(felipe): Check if variable already exists.
         object *Variable = GetVariable(Token);
         if(!Variable)
@@ -92,7 +92,7 @@ Primary(token *Token, token **Rest)
             GlobalVariables->Next = Variable;
             GlobalVariables = Variable;
         }
-
+        
         Result->Variable = Variable;
         
         *Rest = Token->Next;
@@ -302,13 +302,73 @@ ExpressionStatement(token *Token, token **Rest)
     return Result;
 }
 
-// Statement = Expresion-Statement
+internal ast_node *CompoundStatement(token *Token, token **Rest);
+
+// Statement = "{" Compound-Statement
+//           | Expresion-Statement
 internal ast_node *
 Statement(token *Token, token **Rest)
 {
-    ast_node *Result = ExpressionStatement(Token, Rest);
+    ast_node *Result = 0;
 
+    if(TokenIs(Token, "{"))
+    {
+        Result = CompoundStatement(Token->Next, &Token);
+    }
+    else
+    {
+        Result = ExpressionStatement(Token, &Token);
+    }
+
+    *Rest = Token;
+    
     return Result;    
+}
+
+// Compound-Statement = Statement* "}"
+internal ast_node *
+CompoundStatement(token *Token, token **Rest)
+{
+    ast_node *Result = NewNode(ASTNodeType_Block);
+    
+    ast_node Head = {0};
+    ast_node *Current = &Head;
+    
+    while(!TokenIs(Token, "}"))
+    {
+        Current->Next = Statement(Token, &Token);
+        Current = Current->Next;
+    }
+    
+    Result->Body = Head.Next;
+    *Rest = Token->Next;
+    
+    return Result;
+}
+
+// Function = ID "(" ")" Statement
+internal ast_node *
+Function(token *Token, token **Rest)
+{
+    ast_node *Result = 0;
+    
+    if(Token->TokenType == TokenType_Identifier)
+    {
+        Token = Token->Next;
+        
+        Token = AssertNext(Token, "(");
+        Token = AssertNext(Token, ")");
+
+        Result = Statement(Token, &Token);
+        
+        *Rest = Token;
+    }
+    else
+    {
+        ErrorInToken(Token, "expected an identifier");
+    }
+    
+    return Result;
 }
 
 // Program = Statement*
@@ -320,7 +380,9 @@ Program(token *Token, token **Rest)
     
     while(Token->TokenType != TokenType_EOF)
     {
-        Current->Next = Statement(Token, &Token);
+//        Current->Next = Statement(Token, &Token);
+        Current->Next = Function(Token, &Token);
+        
         Current = Current->Next;
     }
 
@@ -346,8 +408,10 @@ char *NodeTypes[] =
     "Assign",
     
     "ExpStm",
-
+    "Block ",
+    
     "Variab",
+    "Functi",
 };
 
 uint32 LastDepth = 0;
@@ -416,6 +480,11 @@ PrintASTNode(ast_node *Node, uint32 Depth)
         {
             PrintASTNode(Node->RightHandSide, Depth + 1);
         }
+
+        if(Node->Body)
+        {
+            PrintASTNode(Node->Body, Depth + 1);
+        }
     }
 }
 
@@ -423,9 +492,9 @@ internal void
 ParseTokens(token *Tokens)
 {
     token *Token = Tokens;
-
+    
     ast_node *Nodes = Program(Token, &Token);
-
+    
     // DEBUG(felipe): Print variables
     printf("\nVariables\n");
     for(object *Variable = GlobalVariablesHead.Next;
