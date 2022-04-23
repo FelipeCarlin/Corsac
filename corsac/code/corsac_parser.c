@@ -41,9 +41,12 @@ AssertNext(token *Token, char *S)
 
 internal ast_node *Expression(token *Token, token **Rest);
 
+
 // TODO(felipe): Remove globals.
+global_variable object *GlobalCurrentFunction = 0;
 global_variable object GlobalVariablesHead = {0};
 global_variable object *GlobalVariables = &GlobalVariablesHead;
+
 
 // Find a local variable by name.
 internal object *
@@ -63,7 +66,6 @@ GetVariable(token *Token)
     
     return Result;
 }
-
 
 // Primary = "(" Expression ")"
 //         | Identifier
@@ -88,9 +90,17 @@ Primary(token *Token, token **Rest)
         {
             Variable = calloc(1, sizeof(object));
             Variable->Name = StringDuplicate(Token->Location, Token->Length);
-            
+
+#if 0
+            if(GlobalCurrentFunction->LocalVariables)
+            {
+                GlobalCurrentFunction->LocalVariables->Next = Variable;
+            }
+            GlobalCurrentFunction->LocalVariables = Variable;
+#else
             GlobalVariables->Next = Variable;
             GlobalVariables = Variable;
+#endif
         }
         
         Result->Variable = Variable;
@@ -347,19 +357,30 @@ CompoundStatement(token *Token, token **Rest)
 }
 
 // Function = ID "(" ")" Statement
-internal ast_node *
+internal object *
 Function(token *Token, token **Rest)
 {
-    ast_node *Result = 0;
+    object *Result = 0;
     
+    // TODO(felipe): Improve error messages.
     if(Token->TokenType == TokenType_Identifier)
     {
+        Result = calloc(1, sizeof(object));
+        Result->Name = StringFromToken(Token);
+        Result->Type = ObjectType_Function;
+        Result->Storage = ObjectStorage_Local;
+        
         Token = Token->Next;
         
         Token = AssertNext(Token, "(");
         Token = AssertNext(Token, ")");
 
-        Result = Statement(Token, &Token);
+        GlobalCurrentFunction = Result;
+        
+        Result->Body = Statement(Token, &Token);
+        Result->LocalVariables = GlobalVariablesHead.Next;
+        GlobalVariablesHead.Next = 0;
+        GlobalVariables = &GlobalVariablesHead;
         
         *Rest = Token;
     }
@@ -371,22 +392,25 @@ Function(token *Token, token **Rest)
     return Result;
 }
 
-// Program = Statement*
-internal ast_node *
+// Program = Function*
+internal program *
 Program(token *Token, token **Rest)
-{        
-    ast_node Head = {0};
-    ast_node *Current = &Head;
+{    
+    program *Result = 0;
+    
+    object Head = {0};
+    object *Current = &Head;
     
     while(Token->TokenType != TokenType_EOF)
     {
-//        Current->Next = Statement(Token, &Token);
         Current->Next = Function(Token, &Token);
-        
         Current = Current->Next;
     }
 
-    return Head.Next;
+    Result = calloc(1, sizeof(program));
+    Result->Objects = Head.Next;
+    
+    return Result;
 }
 
 char *NodeTypes[] =
@@ -411,7 +435,6 @@ char *NodeTypes[] =
     "Block ",
     
     "Variab",
-    "Functi",
 };
 
 uint32 LastDepth = 0;
@@ -466,6 +489,11 @@ PrintASTNode(ast_node *Node, uint32 Depth)
             {
                 printf(" (%s)", Node->Variable->Name);                
             } break;
+
+//            case ASTNodeType_Function:
+//            {
+//                printf(" (%s)", Node->FunctionName);                
+//            } break;
         }
         
         printf("\n");
@@ -488,23 +516,40 @@ PrintASTNode(ast_node *Node, uint32 Depth)
     }
 }
 
-internal void
+internal program *
 ParseTokens(token *Tokens)
 {
+    program *Result = 0;
+    
     token *Token = Tokens;
     
-    ast_node *Nodes = Program(Token, &Token);
+    program *TranslationUnit = Program(Token, &Token);
     
-    // DEBUG(felipe): Print variables
-    printf("\nVariables\n");
-    for(object *Variable = GlobalVariablesHead.Next;
-        Variable;
-        Variable = Variable->Next)
+    // DEBUG(felipe): Print functions
+    printf("\nFunctions\n");
+    for(object *Object = TranslationUnit->Objects;
+        Object;
+        Object = Object->Next)
     {
-        printf("- %s\n", Variable->Name);
+        printf("- %s\n", Object->Name);
+
+        for(object *Variable = Object->LocalVariables;
+            Variable;
+            Variable = Variable->Next)
+        {
+            printf("    %s\n", Variable->Name);
+        }
     }
     
     // DEBUG(felipe): Print AST node tree.
     printf("\nAST\n");
-    PrintASTNode(Nodes, 1);
+    for(object *Object = TranslationUnit->Objects;
+        Object;
+        Object = Object->Next)
+    {
+        printf("%s()\n", Object->Name);
+        PrintASTNode(Object->Body, 1);
+    }
+    
+    return Result;
 }

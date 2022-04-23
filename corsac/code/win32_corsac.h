@@ -22,7 +22,7 @@ typedef enum token_type
     TokenType_Punctuation,    // Any other character
     
     TokenType_Number,         // Number literal
-    TokenType_String,         // String literal
+//    TokenType_String,         // String literal
     
     TokenType_EOF,            // End-of-file markers
 } token_type;

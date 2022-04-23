@@ -7,12 +7,36 @@
    $Notice: Copyright © 2022 Felipe Carlin $
    ======================================================================== */
 
+typedef enum object_type
+{
+    ObjectType_Null,
+    ObjectType_Variable,
+    ObjectType_Function,
+} object_type;
 
-// NOTE(felipe): Variables.
+typedef enum object_storage
+{
+    ObjectStorage_Null,
+    ObjectStorage_Local,
+    ObjectStorage_Global,
+} object_storage;
+
+// NOTE(felipe): Functions, Variables.
 typedef struct object
 {
     char *Name;
+
+    object_type Type;
+    object_storage Storage;
+    
     struct object *Next;
+    
+    // Variable
+    uint32 StackBaseOffset;
+
+    // Function
+    struct ast_node *Body;
+    struct object *LocalVariables;
 } object;
 
 typedef enum ast_node_type
@@ -37,7 +61,7 @@ typedef enum ast_node_type
     ASTNodeType_Block,                   // { ... }
     
     ASTNodeType_Variable,                // Variable
-    ASTNodeType_Function,                // Function definition
+//    ASTNodeType_Function,                // Function definition
     
     ASTNodeType_Count,                   // Internal use, boundry checking
 } ast_node_type;
@@ -50,15 +74,27 @@ typedef struct ast_node
     struct ast_node *LeftHandSide;
     struct ast_node *RightHandSide;
 
-    struct ast_node *Body;
-    
-    uint64 NumericalValue;
-
-    object *Variable;
-    
     // NOTE(felipe): Representative token for nicer error logging.
     token *Token;
+    
+    // Node Function
+    struct ast_node *Body;
+    char *FunctionName;
+    object *LocalVariables;
+    uint32 StackSize; 
+    
+    // Node Number
+    uint64 NumericalValue;
+
+    // Node Variable
+    object *Variable;    
 } ast_node;
+
+typedef struct program
+{
+    // NOTE(felipe): All nodes should be functions.
+    object *Objects;
+} program;
 
 #define CORSAC_PARSER_H
 #endif

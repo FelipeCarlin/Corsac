@@ -43,7 +43,6 @@ typedef int32 bool32;
 
 #include "win32_corsac.h"
 
-#include "corsac_parser.c"
 
 // TODO(felipe): Remove globals
 global_variable HANDLE GlobalConsole;
@@ -369,6 +368,7 @@ Tokenize(loaded_file *File)
                     Current->NumericalValue = StringToNumber(Current->Location,
                                                              SafeTruncateUInt64(Iterator - Current->Location));
                 }
+#if 0
                 else if(*Iterator == '\"')
                 {
                     // NOTE(felipe): Token is a string literal.
@@ -391,6 +391,7 @@ Tokenize(loaded_file *File)
                         
                     ++Iterator;
                 }
+#endif
                 else if(*Iterator == '\'')
                 {
                     Current->TokenType = TokenType_Number;
@@ -580,8 +581,8 @@ StringFromToken(token *Token)
 {
     char *Result = 0;
 
-    Assert(Token->TokenType == TokenType_String);
-    Result = StringDuplicate(Token->Location + 1, Token->Length - 2);
+//    Assert(Token->TokenType == TokenType_String);
+    Result = StringDuplicate(Token->Location, Token->Length);
     
     return Result;
 }
@@ -726,6 +727,9 @@ PushMacro(macro_list *List, macro *SourceMacro)
     ++List->Count;
 }
 
+#include "corsac_parser.c"
+#include "corsac_ir.c"
+
 internal int
 main(int ArgumentCount, char **ArgumentVector)
 {
@@ -851,11 +855,12 @@ main(int ArgumentCount, char **ArgumentVector)
                         Token = Token->Next;
 
                         char *Filename = 0;
-                        if(Token->TokenType == TokenType_String)
+                        if(TokenIs(Token, "\""))
                         {
                             // Pattern 1: #include "foo.h"
-        
-                            Filename = StringFromToken(Token);
+                            
+                            Filename = StringFromToken(Token->Next);
+                            AssertNext(Token, "\"");
                             Token = Token->Next;
                         }
                         else if(TokenIsCharacter(Token, '<'))
@@ -903,7 +908,11 @@ main(int ArgumentCount, char **ArgumentVector)
             //
 
             // NOTE(felipe): Parse
-            ParseTokens(Head.Next);
+//            ast_node *Program = ParseTokens(Head.Next);
+            program *Program = ParseTokens(Head.Next);
+
+            // NOTE(felipe): Generate Intermediate Representation.
+//            GenerateIR(Program);
         }
     }
     else
