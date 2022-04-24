@@ -6,19 +6,36 @@
    $Notice: Copyright © 2022 Felipe Carlin $
    ======================================================================== */
 
+global_variable memory_arena *GlobalFileArena;
 global_variable uint32 GlobalDepth;
+
+internal void
+PushString(memory_arena *Arena, char *String, ...)
+{
+    va_list Arguments;
+    va_start(Arguments, String);
+    
+    uint32 Lenght = vsnprintf(0, 0, String, Arguments) + 1;
+    Assert((Arena->Size - Arena->Used) > Lenght);    
+
+    vsnprintf((char *)Arena->Memory + Arena->Used, Lenght, String, Arguments);
+
+    Arena->Used += Lenght;
+    
+    va_end(Arguments);
+}
 
 internal void
 GeneratePush(void)
 {
-    printf("  push rax\n");
+    PushString(GlobalFileArena, "  push rax\n");
     GlobalDepth++;
 }
 
 internal void
 GeneratePop(char *Argument)
 {
-    printf("  pop %s\n", Argument);
+    PushString(GlobalFileArena, "  pop %s\n", Argument);
     GlobalDepth--;
 }
 
@@ -38,7 +55,7 @@ GenerateAddress(ast_node *Node)
 {
     if(Node->NodeType == ASTNodeType_Variable)
     {
-        printf("  lea rax, [rbp + %d]\n", Node->Variable->StackBaseOffset);
+        PushString(GlobalFileArena, "  lea rax, [rbp + %d]\n", Node->Variable->StackBaseOffset);
     }
     else
     {
@@ -55,19 +72,19 @@ GenerateExpression(ast_node *Node)
         case ASTNodeType_Number:
         {
             // TODO(felipe): Make numerical value storing consistent.
-            printf("  mov rax, %d\n", (uint32)Node->NumericalValue);
+            PushString(GlobalFileArena, "  mov rax, %d\n", (uint32)Node->NumericalValue);
         } break;
         
         case ASTNodeType_Negate:
         {
             GenerateExpression(Node->LeftHandSide);
-            printf("  neg rax\n");
+            PushString(GlobalFileArena, "  neg rax\n");
         } break;
         
         case ASTNodeType_Variable:
         {
             GenerateAddress(Node);
-            printf("  mov rax, [rax]\n");
+            PushString(GlobalFileArena, "  mov rax, [rax]\n");
         } break;
         
         case ASTNodeType_Assign:
@@ -77,7 +94,7 @@ GenerateExpression(ast_node *Node)
             GenerateExpression(Node->RightHandSide);
             GeneratePop("rdi");
             
-            printf("  mov [rdi], rax\n");
+            PushString(GlobalFileArena, "  mov [rdi], rax\n");
         } break;
         
         default:
@@ -91,23 +108,23 @@ GenerateExpression(ast_node *Node)
             {
                 case ASTNodeType_Add:
                 {
-                    printf("  add rax, rdi\n");
+                    PushString(GlobalFileArena, "  add rax, rdi\n");
                 } break;
                 
                 case ASTNodeType_Sub:
                 {
-                    printf("  sub rax, rdi\n");
+                    PushString(GlobalFileArena, "  sub rax, rdi\n");
                 } break;
                 
                 case ASTNodeType_Multiply:
                 {
-                    printf("  imul rax, rdi\n");
+                    PushString(GlobalFileArena, "  imul rax, rdi\n");
                 } break;
                 
                 case ASTNodeType_Divide:
                 {
-                    printf("  cqo\n");
-                    printf("  idiv rdi\n");
+                    PushString(GlobalFileArena, "  cqo\n");
+                    PushString(GlobalFileArena, "  idiv rdi\n");
                 } break;
                 
                 case ASTNodeType_Equal:
@@ -115,26 +132,26 @@ GenerateExpression(ast_node *Node)
                 case ASTNodeType_LessThan:
                 case ASTNodeType_LessEqual:
                 {
-                    printf("  cmp rax, rdi\n");
+                    PushString(GlobalFileArena, "  cmp rax, rdi\n");
 
                     if(Node->NodeType == ASTNodeType_Equal)
                     {
-                        printf("  sete al\n");
+                        PushString(GlobalFileArena, "  sete al\n");
                     }
                     else if(Node->NodeType == ASTNodeType_NotEqual)
                     {
-                        printf("  setne al\n");
+                        PushString(GlobalFileArena, "  setne al\n");
                     }
                     else if(Node->NodeType == ASTNodeType_LessThan)
                     {
-                        printf("  setl al\n");
+                        PushString(GlobalFileArena, "  setl al\n");
                     }
                     else if(Node->NodeType == ASTNodeType_LessEqual)
                     {
-                        printf("  setle al\n");
+                        PushString(GlobalFileArena, "  setle al\n");
                     }
                     
-                    printf("  movzb al, rax\n");
+                    PushString(GlobalFileArena, "  movzb al, rax\n");
                 } break;
 
                 default:
@@ -164,7 +181,7 @@ GenerateStatement(ast_node *Node)
         case ASTNodeType_Return:
         {
             GenerateExpression(Node->LeftHandSide);
-            printf("  jmp .L.return\n");
+            PushString(GlobalFileArena, "  jmp .L.return\n");
         } break;
         
         case ASTNodeType_Expression_Statement:
@@ -204,22 +221,24 @@ AssignLvarOffsets(program *Program)
 internal void
 GenerateIR(program *Program)
 {
+    // TODO(felipe): Resize arena as needed.
+    memory_arena FileArena = Win32AllocateArena(Megabytes(1));
+    GlobalFileArena = &FileArena;
+    
     AssignLvarOffsets(Program);
     
-    printf("\nIR\n\n");
+    PushString(GlobalFileArena, "  section .text\n");
+    PushString(GlobalFileArena, "  global main\n");
+    PushString(GlobalFileArena, "main:\n");
     
-    printf("  section .text\n");
-    printf("  global main\n");
-    printf("main:\n");
-
     for(object *Object = Program->Objects;
         Object;
         Object = Object->Next)
     {
         // Prologue
-        printf("  push rbp\n");
-        printf("  mov rbp, rsp\n");
-        printf("  sub rsp, %d\n", Object->StackSize);
+        PushString(GlobalFileArena, "  push rbp\n");
+        PushString(GlobalFileArena, "  mov rbp, rsp\n");
+        PushString(GlobalFileArena, "  sub rsp, %d\n", Object->StackSize);
         
         for(ast_node *Node = Object->Body;
             Node;
@@ -228,10 +247,12 @@ GenerateIR(program *Program)
             GenerateStatement(Node);
             Assert(GlobalDepth == 0);
         }
-    
-        printf(".L.return:\n");
-        printf("  mov rsp, rbp\n");
-        printf("  pop rbp\n");
-        printf("  ret\n");
+        
+        PushString(GlobalFileArena, ".L.return:\n");
+        PushString(GlobalFileArena, "  mov rsp, rbp\n");
+        PushString(GlobalFileArena, "  pop rbp\n");
+        PushString(GlobalFileArena, "  ret\n");
     }
+    
+    Win32WriteEntireFile("main.asm", FileArena.Memory, FileArena.Used);
 }
