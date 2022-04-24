@@ -342,7 +342,7 @@ Tokenize(loaded_file *File)
                    (*Iterator >= 'A' && *Iterator <= 'Z') ||
                    *Iterator == '_')
                 {
-                    // NOTE(felipe): Token is an Identifier.
+                    // NOTE(felipe): Token is an Identifier or Keyword.
                     Current->TokenType = TokenType_Identifier;
                 
                     while((*Iterator >= 'a' && *Iterator <= 'z') ||
@@ -468,7 +468,27 @@ Tokenize(loaded_file *File)
             }
         }
     }
-            
+    
+    char *Keywords[] =
+        {
+            "return",
+        };
+
+    for(token *Token = Head.Next;
+        Token;
+        Token = Token->Next)
+    {    
+        for(uint32 Index = 0;
+            Index < ArrayCount(Keywords);
+            ++Index)
+        {
+            if(TokenIs(Token, Keywords[Index]))
+            {
+                Token->TokenType = TokenType_Keyword;
+            }
+        }
+    }
+    
     // NOTE(felipe): Last token is EOF.
     Current->Next = (token *)calloc(sizeof(token), 1);
     Current = Current->Next;
@@ -894,8 +914,8 @@ main(int ArgumentCount, char **ArgumentVector)
                 {
                     "Ident",
                     "Punct",
+                    "Keywo",
                     "Numbe",
-                    "Strin",
                     "EOF  ",
                 };
             
@@ -908,11 +928,10 @@ main(int ArgumentCount, char **ArgumentVector)
             //
 
             // NOTE(felipe): Parse
-//            ast_node *Program = ParseTokens(Head.Next);
             program *Program = ParseTokens(Head.Next);
 
             // NOTE(felipe): Generate Intermediate Representation.
-//            GenerateIR(Program);
+            GenerateIR(Program);
         }
     }
     else

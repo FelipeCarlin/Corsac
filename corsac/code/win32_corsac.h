@@ -18,8 +18,10 @@ typedef struct loaded_file
 
 typedef enum token_type
 {
-    TokenType_Identifier,     // Identifier or keyword
-    TokenType_Punctuation,    // Any other character
+    TokenType_Identifier,
+    TokenType_Punctuation,    // Any character other than (a...z, A...Z, 0...9)
+    
+    TokenType_Keyword,
     
     TokenType_Number,         // Number literal
 //    TokenType_String,         // String literal

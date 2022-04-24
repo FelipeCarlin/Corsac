@@ -37,6 +37,7 @@ typedef struct object
     // Function
     struct ast_node *Body;
     struct object *LocalVariables;
+    uint32 StackSize;
 } object;
 
 typedef enum ast_node_type
@@ -62,6 +63,8 @@ typedef enum ast_node_type
     
     ASTNodeType_Variable,                // Variable
 //    ASTNodeType_Function,                // Function definition
+
+    ASTNodeType_Return,                  // "return" statement
     
     ASTNodeType_Count,                   // Internal use, boundry checking
 } ast_node_type;
@@ -77,11 +80,7 @@ typedef struct ast_node
     // NOTE(felipe): Representative token for nicer error logging.
     token *Token;
     
-    // Node Function
     struct ast_node *Body;
-    char *FunctionName;
-    object *LocalVariables;
-    uint32 StackSize; 
     
     // Node Number
     uint64 NumericalValue;

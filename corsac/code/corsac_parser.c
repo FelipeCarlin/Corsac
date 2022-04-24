@@ -315,6 +315,7 @@ ExpressionStatement(token *Token, token **Rest)
 internal ast_node *CompoundStatement(token *Token, token **Rest);
 
 // Statement = "{" Compound-Statement
+//           | "return" Expression ";"
 //           | Expresion-Statement
 internal ast_node *
 Statement(token *Token, token **Rest)
@@ -324,6 +325,13 @@ Statement(token *Token, token **Rest)
     if(TokenIs(Token, "{"))
     {
         Result = CompoundStatement(Token->Next, &Token);
+    }
+    else if(TokenIs(Token, "return"))
+    {
+        Result = NewNode(ASTNodeType_Return);
+        Result->LeftHandSide = Expression(Token->Next, &Token);
+        
+        Token = AssertNext(Token, ";");
     }
     else
     {
@@ -435,6 +443,8 @@ char *NodeTypes[] =
     "Block ",
     
     "Variab",
+
+    "Return",
 };
 
 uint32 LastDepth = 0;
@@ -521,13 +531,11 @@ ParseTokens(token *Tokens)
 {
     program *Result = 0;
     
-    token *Token = Tokens;
-    
-    program *TranslationUnit = Program(Token, &Token);
+    Result = Program(Tokens, &Tokens);
     
     // DEBUG(felipe): Print functions
     printf("\nFunctions\n");
-    for(object *Object = TranslationUnit->Objects;
+    for(object *Object = Result->Objects;
         Object;
         Object = Object->Next)
     {
@@ -543,7 +551,7 @@ ParseTokens(token *Tokens)
     
     // DEBUG(felipe): Print AST node tree.
     printf("\nAST\n");
-    for(object *Object = TranslationUnit->Objects;
+    for(object *Object = Result->Objects;
         Object;
         Object = Object->Next)
     {

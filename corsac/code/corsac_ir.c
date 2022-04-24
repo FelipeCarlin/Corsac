@@ -151,6 +151,22 @@ GenerateStatement(ast_node *Node)
 {
     switch(Node->NodeType)
     {
+        case ASTNodeType_Block:
+        {
+            for(ast_node *ChildNode = Node->Body;
+                ChildNode;
+                ChildNode = ChildNode->Next)
+            {
+                GenerateStatement(ChildNode);
+            }
+        } break;
+        
+        case ASTNodeType_Return:
+        {
+            GenerateExpression(Node->LeftHandSide);
+            printf("  jmp .L.return\n");
+        } break;
+        
         case ASTNodeType_Expression_Statement:
         {
             GenerateExpression(Node->LeftHandSide);
@@ -163,22 +179,26 @@ GenerateStatement(ast_node *Node)
     }
 }
 
-#if 0
 // Assign offsets to local variables.
 internal void
 AssignLvarOffsets(program *Program)
 {
-    uint32 Offset = 0;
-    
-    for(object *Variable = Program->Variables;
-         Variable;
-         Variable = Variable->Next)
+    for(object *Object = Program->Objects;
+        Object;
+        Object = Object->Next)
     {
-        Offset += 8;
-        Variable->StackBaseOffset = -Offset;
+        uint32 Offset = 0;
+        
+        for(object *Variable = Object->LocalVariables;
+            Variable;
+            Variable = Variable->Next)
+        {
+            Offset += 8;
+            Variable->StackBaseOffset = -Offset;
+        }
+        
+        Object->StackSize = AlignTo(Offset, 16);
     }
-    
-    Program->StackSize = AlignTo(Offset, 16);
 }
 
 internal void
@@ -191,23 +211,27 @@ GenerateIR(program *Program)
     printf("  section .text\n");
     printf("  global main\n");
     printf("main:\n");
-    
-    // Prologue
-    printf("  push rbp\n");
-    printf("  mov rbp, rsp\n");
-    printf("  sub rsp, %d\n", Program->StackSize);
-    
-    for(ast_node *Node = Program->Nodes;
-        Node;
-        Node = Node->Next)
+
+    for(object *Object = Program->Objects;
+        Object;
+        Object = Object->Next)
     {
-        GenerateStatement(Node);
-        Assert(GlobalDepth == 0);
-    }
+        // Prologue
+        printf("  push rbp\n");
+        printf("  mov rbp, rsp\n");
+        printf("  sub rsp, %d\n", Object->StackSize);
+        
+        for(ast_node *Node = Object->Body;
+            Node;
+            Node = Node->Next)
+        {
+            GenerateStatement(Node);
+            Assert(GlobalDepth == 0);
+        }
     
-    printf(".L.return:\n");
-    printf("  mov rsp, rbp\n");
-    printf("  pop rbp\n");
-    printf("  ret\n");
+        printf(".L.return:\n");
+        printf("  mov rsp, rbp\n");
+        printf("  pop rbp\n");
+        printf("  ret\n");
+    }
 }
-#endif
