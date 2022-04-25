@@ -43,7 +43,6 @@ internal ast_node *Expression(token *Token, token **Rest);
 
 
 // TODO(felipe): Remove globals.
-global_variable object *GlobalCurrentFunction = 0;
 global_variable object GlobalVariablesHead = {0};
 global_variable object *GlobalVariables = &GlobalVariablesHead;
 
@@ -91,16 +90,8 @@ Primary(token *Token, token **Rest)
             Variable = calloc(1, sizeof(object));
             Variable->Name = StringDuplicate(Token->Location, Token->Length);
 
-#if 0
-            if(GlobalCurrentFunction->LocalVariables)
-            {
-                GlobalCurrentFunction->LocalVariables->Next = Variable;
-            }
-            GlobalCurrentFunction->LocalVariables = Variable;
-#else
             GlobalVariables->Next = Variable;
             GlobalVariables = Variable;
-#endif
         }
         
         Result->Variable = Variable;
@@ -113,7 +104,7 @@ Primary(token *Token, token **Rest)
         Result->Token = Token;
         
         Result->NumericalValue = Token->NumericalValue;
-
+        
         *Rest = Token->Next;
     }
     else
@@ -316,12 +307,14 @@ internal ast_node *CompoundStatement(token *Token, token **Rest);
 
 // Statement = "{" Compound-Statement
 //           | "return" Expression ";"
+//           | "if" "(" Expression ")" Statement ("else" Statement)?
+//           | "for" "(" ExpressionStatement Expression? ";" Expression? ")" Statement
 //           | Expresion-Statement
 internal ast_node *
 Statement(token *Token, token **Rest)
 {
     ast_node *Result = 0;
-
+    
     if(TokenIs(Token, "{"))
     {
         Result = CompoundStatement(Token->Next, &Token);
@@ -333,11 +326,47 @@ Statement(token *Token, token **Rest)
         
         Token = AssertNext(Token, ";");
     }
+    else if(TokenIs(Token, "if"))
+    {
+        Result = NewNode(ASTNodeType_If);
+        
+        Token = AssertNext(Token->Next, "(");
+        Result->Condition = Expression(Token, &Token);
+        Token = AssertNext(Token, ")");
+        
+        Result->Then = Statement(Token, &Token);
+        
+        if(TokenIs(Token, "else"))
+        {
+            Result->Else = Statement(Token->Next, &Token);
+        }
+    }
+    else if(TokenIs(Token, "for"))
+    {
+        Result = NewNode(ASTNodeType_For);
+        
+        Token = AssertNext(Token->Next, "(");
+        Result->Init = ExpressionStatement(Token, &Token);
+
+        if(!TokenIs(Token, ";"))
+        {
+            Result->Condition = Expression(Token, &Token);
+        }
+        Token = AssertNext(Token, ";");
+
+        if(!TokenIs(Token, ")"))
+        {
+            Result->Increment = Expression(Token, &Token);
+        }
+        Token = AssertNext(Token, ")");
+        
+        Result->Then = Statement(Token, &Token);
+    }
     else
     {
         Result = ExpressionStatement(Token, &Token);
     }
-
+    
     *Rest = Token;
     
     return Result;    
@@ -382,8 +411,6 @@ Function(token *Token, token **Rest)
         
         Token = AssertNext(Token, "(");
         Token = AssertNext(Token, ")");
-
-        GlobalCurrentFunction = Result;
         
         Result->Body = Statement(Token, &Token);
         Result->LocalVariables = GlobalVariablesHead.Next;
@@ -445,6 +472,8 @@ char *NodeTypes[] =
     "Variab",
 
     "Return",
+    "If    ",
+    "For   ",
 };
 
 uint32 LastDepth = 0;
@@ -487,19 +516,19 @@ PrintASTNode(ast_node *Node, uint32 Depth)
         }
         
         printf("Node: type: %s", NodeTypes[Node->NodeType]);
-
+        
         switch(Node->NodeType)
         {
             case ASTNodeType_Number:
             {
                 printf(" (%lld)", Node->NumericalValue);
             } break;
-
+            
             case ASTNodeType_Variable:
             {
                 printf(" (%s)", Node->Variable->Name);                
             } break;
-
+            
 //            case ASTNodeType_Function:
 //            {
 //                printf(" (%s)", Node->FunctionName);                
@@ -518,7 +547,7 @@ PrintASTNode(ast_node *Node, uint32 Depth)
         {
             PrintASTNode(Node->RightHandSide, Depth + 1);
         }
-
+        
         if(Node->Body)
         {
             PrintASTNode(Node->Body, Depth + 1);
@@ -540,7 +569,7 @@ ParseTokens(token *Tokens)
         Object = Object->Next)
     {
         printf("- %s\n", Object->Name);
-
+        
         for(object *Variable = Object->LocalVariables;
             Variable;
             Variable = Variable->Next)

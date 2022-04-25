@@ -256,6 +256,9 @@ Tokenize(loaded_file *File)
     char *Keywords[] =
         {
             "return",
+            "if",
+            "else",
+            "for",
         };
     
     for(token *Token = Head.Next;

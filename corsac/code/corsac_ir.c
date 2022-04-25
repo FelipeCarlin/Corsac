@@ -9,6 +9,15 @@
 global_variable memory_arena *GlobalFileArena;
 global_variable uint32 GlobalDepth;
 
+internal uint32
+UniqueNumber()
+{
+    local_persist uint32 Number = 0;
+    ++Number;
+    
+    return Number;
+}
+
 internal void
 PushString(memory_arena *Arena, char *String, ...)
 {
@@ -16,11 +25,11 @@ PushString(memory_arena *Arena, char *String, ...)
     va_start(Arguments, String);
     
     uint32 Lenght = vsnprintf(0, 0, String, Arguments) + 1;
-    Assert((Arena->Size - Arena->Used) > Lenght);    
-
+    Assert((Arena->Size - Arena->Used) > Lenght);
+    
     vsnprintf((char *)Arena->Memory + Arena->Used, Lenght, String, Arguments);
-
-    Arena->Used += Lenght;
+    
+    Arena->Used += Lenght - 1;
     
     va_end(Arguments);
 }
@@ -103,7 +112,7 @@ GenerateExpression(ast_node *Node)
             GeneratePush();
             GenerateExpression(Node->LeftHandSide);
             GeneratePop("rdi");
-
+            
             switch(Node->NodeType)
             {
                 case ASTNodeType_Add:
@@ -133,7 +142,7 @@ GenerateExpression(ast_node *Node)
                 case ASTNodeType_LessEqual:
                 {
                     PushString(GlobalFileArena, "  cmp rax, rdi\n");
-
+                    
                     if(Node->NodeType == ASTNodeType_Equal)
                     {
                         PushString(GlobalFileArena, "  sete al\n");
@@ -151,9 +160,9 @@ GenerateExpression(ast_node *Node)
                         PushString(GlobalFileArena, "  setle al\n");
                     }
                     
-                    PushString(GlobalFileArena, "  movzb al, rax\n");
+                    PushString(GlobalFileArena, "  movsx rax, al\n");
                 } break;
-
+                
                 default:
                 {
                     ErrorInToken(Node->Token, "invalid expression");
@@ -183,12 +192,56 @@ GenerateStatement(ast_node *Node)
             GenerateExpression(Node->LeftHandSide);
             PushString(GlobalFileArena, "  jmp .L.return\n");
         } break;
+
+        case ASTNodeType_If:
+        {
+            uint32 ID = UniqueNumber();
+            GenerateExpression(Node->Condition);
+            
+            PushString(GlobalFileArena, "  cmp rax, 0\n");
+            PushString(GlobalFileArena, "  je  .L.else.%d\n", ID);
+
+            GenerateStatement(Node->Then);
+
+            PushString(GlobalFileArena, "  jmp .L.end.%d\n", ID);
+            PushString(GlobalFileArena, ".L.else.%d:\n", ID);
+            if(Node->Else)
+            {
+                GenerateStatement(Node->Else);
+            }
+            
+            PushString(GlobalFileArena, ".L.end.%d:\n", ID);
+        } break;
+
+        case ASTNodeType_For:
+        {
+            uint32 ID = UniqueNumber();
+            GenerateStatement(Node->Init);
+            
+            PushString(GlobalFileArena, ".L.begin.%d:\n", ID);
+            if(Node->Condition)
+            {
+                GenerateExpression(Node->Condition);
+                PushString(GlobalFileArena, "  cmp rax, 0\n");
+                PushString(GlobalFileArena, "  je  .L.end.%d\n", ID);
+            }
+            
+            GenerateStatement(Node->Then);
+            
+            if(Node->Increment)
+            {
+                GenerateExpression(Node->Increment);
+            }
+            
+            PushString(GlobalFileArena, "  jmp .L.begin.%d\n", ID);
+            PushString(GlobalFileArena, ".L.end.%d:\n", ID);
+        } break;
         
         case ASTNodeType_Expression_Statement:
         {
             GenerateExpression(Node->LeftHandSide);
         } break;
-
+        
         default:
         {
             ErrorInToken(Node->Token, "invalid statement");
@@ -218,6 +271,8 @@ AssignLvarOffsets(program *Program)
     }
 }
 
+
+
 internal void
 GenerateIR(program *Program)
 {
@@ -229,12 +284,13 @@ GenerateIR(program *Program)
     
     PushString(GlobalFileArena, "  section .text\n");
     PushString(GlobalFileArena, "  global main\n");
-    PushString(GlobalFileArena, "main:\n");
     
     for(object *Object = Program->Objects;
         Object;
         Object = Object->Next)
     {
+        PushString(GlobalFileArena, "%s:\n", Object->Name);
+        
         // Prologue
         PushString(GlobalFileArena, "  push rbp\n");
         PushString(GlobalFileArena, "  mov rbp, rsp\n");

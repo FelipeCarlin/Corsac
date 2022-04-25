@@ -65,6 +65,8 @@ typedef enum ast_node_type
 //    ASTNodeType_Function,                // Function definition
 
     ASTNodeType_Return,                  // "return" statement
+    ASTNodeType_If,                      // "if" statement
+    ASTNodeType_For,                     // "for" statement 
     
     ASTNodeType_Count,                   // Internal use, boundry checking
 } ast_node_type;
@@ -81,6 +83,13 @@ typedef struct ast_node
     token *Token;
     
     struct ast_node *Body;
+    
+    // "if" / "for" statement
+    struct ast_node *Init;
+    struct ast_node *Condition;
+    struct ast_node *Increment;
+    struct ast_node *Then;
+    struct ast_node *Else;
     
     // Node Number
     uint64 NumericalValue;
