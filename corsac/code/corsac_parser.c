@@ -20,6 +20,15 @@ NewNode(ast_node_type NodeType, token *Token)
 }
 
 inline ast_node *
+NewNumber(uint32 Value, token *Token)
+{
+    ast_node *Node = NewNode(ASTNodeType_Number, Token);
+    Node->NumericalValue = Value;
+
+    return Node;
+}
+
+inline ast_node *
 NewBinaryNode(ast_node_type NodeType, ast_node *LeftHandSide, ast_node *RightHandSide, token *Token)
 {
     ast_node *Result = NewNode(NodeType, Token);
@@ -179,6 +188,162 @@ Multiply(token *Token, token **Rest)
     return Result;
 }
 
+variable_type *GlobalTypeInt = &(variable_type){TypeKind_Int};
+
+inline bool32 TypeIsInteger(variable_type *Type)
+{
+    bool32 Result = Type->Kind == TypeKind_Int;
+    return Result;
+}
+
+inline variable_type *
+PointerTo(variable_type *Base)
+{
+  variable_type *Type = calloc(1, sizeof(variable_type));
+  Type->Kind = TypeKind_Pointer;
+  Type->Base = Base;
+  return Type;
+}
+
+internal void
+AddTypeToNode(ast_node *Node)
+{
+    if(Node && !Node->Type)
+    {
+        AddTypeToNode(Node->LeftHandSide);
+        AddTypeToNode(Node->RightHandSide);
+        AddTypeToNode(Node->Condition);
+        AddTypeToNode(Node->Then);
+        AddTypeToNode(Node->Else);
+        AddTypeToNode(Node->Init);
+        AddTypeToNode(Node->Increment);
+
+        for(ast_node *N = Node->Body;
+            N;
+            N = N->Next)
+        {
+            AddTypeToNode(N);
+        }
+        
+        switch(Node->NodeType)
+        {
+            case ASTNodeType_Add:
+            case ASTNodeType_Sub:
+            case ASTNodeType_Multiply:
+            case ASTNodeType_Divide:
+            case ASTNodeType_Negate:
+            case ASTNodeType_Assign:
+            {
+                Node->Type = Node->LeftHandSide->Type;
+            } break;
+            
+            case ASTNodeType_Equal:
+            case ASTNodeType_NotEqual:
+            case ASTNodeType_LessThan:
+            case ASTNodeType_LessEqual:
+            case ASTNodeType_Variable:
+            case ASTNodeType_Number:
+            {
+                Node->Type = GlobalTypeInt;
+            } break;
+
+            case ASTNodeType_Address:
+            {
+                Node->Type = PointerTo(Node->LeftHandSide->Type);
+            } break;
+
+            case ASTNodeType_Dereference:
+            {
+                if(Node->LeftHandSide->Type->Kind == TypeKind_Pointer)
+                {
+                    Node->Type = Node->LeftHandSide->Type->Base;
+                }
+                else
+                {
+                    Node->Type = GlobalTypeInt;
+                }
+            } break;
+        }
+    }
+}
+
+internal ast_node *
+NewAddition(ast_node *LeftHandSide, ast_node *RightHandSide, token *Token)
+{
+    ast_node *Result = 0;
+    
+    AddTypeToNode(LeftHandSide);
+    AddTypeToNode(RightHandSide);
+    
+    if(TypeIsInteger(LeftHandSide->Type) && TypeIsInteger(RightHandSide->Type))
+    {
+        Result = NewBinaryNode(ASTNodeType_Add, LeftHandSide, RightHandSide, Token);
+    }
+    else
+    {
+        if(LeftHandSide->Type->Base && RightHandSide->Type->Base)
+        {
+            ErrorInToken(Token, "invalid operands");
+        }
+        else
+        {
+            // Canonicalize `num + ptr` to `ptr + num`.
+            if(!LeftHandSide->Type->Base && RightHandSide->Type->Base)
+            {
+                ast_node *Temp = LeftHandSide;
+                LeftHandSide = RightHandSide;
+                RightHandSide = Temp;
+            }
+            
+            RightHandSide = NewBinaryNode(ASTNodeType_Multiply, RightHandSide, NewNumber(8, Token), Token);
+            Result = NewBinaryNode(ASTNodeType_Add, LeftHandSide, RightHandSide, Token);
+        }
+    }
+    
+    return Result;
+}
+
+// Like `+`, `-` is overloaded for the pointer type.
+internal ast_node *
+NewSubtraction(ast_node *LeftHandSide, ast_node *RightHandSide, token *Token)
+{
+    ast_node *Result = 0;
+    
+    AddTypeToNode(LeftHandSide);
+    AddTypeToNode(RightHandSide);
+
+    // num - num
+    if(TypeIsInteger(LeftHandSide->Type) && TypeIsInteger(RightHandSide->Type))
+    {
+        Result = NewBinaryNode(ASTNodeType_Sub, LeftHandSide, RightHandSide, Token);
+    }
+    else if(LeftHandSide->Type->Base && TypeIsInteger(RightHandSide->Type))
+    {
+        // ptr - num
+        
+        RightHandSide = NewBinaryNode(ASTNodeType_Multiply, RightHandSide, NewNumber(8, Token), Token);
+        
+        AddTypeToNode(RightHandSide);
+
+        Result = NewBinaryNode(ASTNodeType_Sub, LeftHandSide, RightHandSide, Token);
+        Result->Type = LeftHandSide->Type;
+    }
+    else if(LeftHandSide->Type->Base && RightHandSide->Type->Base)
+    {
+        // ptr - ptr, which returns how many elements are between the two.
+        
+        ast_node *Node = NewBinaryNode(ASTNodeType_Sub, LeftHandSide, RightHandSide, Token);
+        Node->Type = GlobalTypeInt;
+        Result = NewBinaryNode(ASTNodeType_Divide, Node, NewNumber(8, Token), Token);
+    }
+    else
+    {
+        ErrorInToken(Token, "invalid operands");
+    }
+    
+    return Result;
+}
+
 // Add = Multiply ("+" Multiply | "-" Multiply)*
 internal ast_node *
 Add(token *Token, token **Rest)
@@ -191,11 +356,13 @@ Add(token *Token, token **Rest)
         
         if(TokenIs(Token, "+"))
         {
-            Result = NewBinaryNode(ASTNodeType_Add, Result, Multiply(Token->Next, &Token), Start);
+//            Result = NewBinaryNode(ASTNodeType_Add, Result, Multiply(Token->Next, &Token), Start);
+            Result = NewAddition(Result, Multiply(Token->Next, &Token), Start);
         }
         else if(TokenIs(Token, "-"))
         {
-            Result = NewBinaryNode(ASTNodeType_Sub, Result, Multiply(Token->Next, &Token), Start);
+//            Result = NewBinaryNode(ASTNodeType_Sub, Result, Multiply(Token->Next, &Token), Start);
+            Result = NewSubtraction(Result, Multiply(Token->Next, &Token), Start);
         }
         else
         {

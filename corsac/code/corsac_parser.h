@@ -40,6 +40,18 @@ typedef struct object
     uint32 StackSize;
 } object;
 
+typedef enum type_kind
+{
+    TypeKind_Int,
+    TypeKind_Pointer,
+} type_kind;
+
+typedef struct variable_type
+{
+    type_kind Kind;
+    struct variable_type *Base;
+} variable_type;
+
 typedef enum ast_node_type
 {
     ASTNodeType_Number,                  // Integer
@@ -77,6 +89,8 @@ typedef enum ast_node_type
 typedef struct ast_node
 {
     ast_node_type NodeType;
+
+    variable_type *Type;
     
     struct ast_node *Next;
     struct ast_node *LeftHandSide;
@@ -98,7 +112,7 @@ typedef struct ast_node
     uint64 NumericalValue;
 
     // Node Variable
-    object *Variable;    
+    object *Variable;
 } ast_node;
 
 typedef struct program

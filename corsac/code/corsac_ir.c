@@ -296,8 +296,6 @@ AssignLvarOffsets(program *Program)
     }
 }
 
-
-
 internal void
 GenerateIR(program *Program)
 {
