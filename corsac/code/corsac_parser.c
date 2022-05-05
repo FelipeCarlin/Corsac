@@ -9,18 +9,20 @@
 #include "corsac_parser.h"
 
 inline ast_node *
-NewNode(ast_node_type NodeType)
+NewNode(ast_node_type NodeType, token *Token)
 {
     ast_node *Node = calloc(1, sizeof(ast_node));
     Node->NodeType = NodeType;
+
+    Node->Token = Token;
     
     return Node;
 }
 
 inline ast_node *
-NewBinaryNode(ast_node_type NodeType, ast_node *LeftHandSide, ast_node *RightHandSide)
+NewBinaryNode(ast_node_type NodeType, ast_node *LeftHandSide, ast_node *RightHandSide, token *Token)
 {
-    ast_node *Result = NewNode(NodeType);
+    ast_node *Result = NewNode(NodeType, Token);
     Result->LeftHandSide = LeftHandSide;
     Result->RightHandSide = RightHandSide;
 
@@ -81,7 +83,7 @@ Primary(token *Token, token **Rest)
     }
     else if(Token->TokenType == TokenType_Identifier)
     {
-        Result = NewNode(ASTNodeType_Variable);
+        Result = NewNode(ASTNodeType_Variable, Token);
         
         // NOTE(felipe): Check if variable already exists.
         object *Variable = GetVariable(Token);
@@ -100,7 +102,7 @@ Primary(token *Token, token **Rest)
     }
     else if(Token->TokenType == TokenType_Number)
     {
-        Result = NewNode(ASTNodeType_Number);
+        Result = NewNode(ASTNodeType_Number, Token);
         Result->Token = Token;
         
         Result->NumericalValue = Token->NumericalValue;
@@ -115,7 +117,7 @@ Primary(token *Token, token **Rest)
     return Result;
 }
 
-// Unary = ("+" | "-") Unary
+// Unary = ("+" | "-"| "*" | "&") Unary
 //       | Primary
 internal ast_node *
 Unary(token *Token, token **Rest)
@@ -128,7 +130,17 @@ Unary(token *Token, token **Rest)
     }
     else if(TokenIs(Token, "-"))
     {
-        Result = NewNode(ASTNodeType_Negate);
+        Result = NewNode(ASTNodeType_Negate, Token);
+        Result->LeftHandSide = Unary(Token->Next, Rest);
+    }
+    else if(TokenIs(Token, "*"))
+    {
+        Result = NewNode(ASTNodeType_Dereference, Token);
+        Result->LeftHandSide = Unary(Token->Next, Rest);
+    }
+    else if(TokenIs(Token, "&"))
+    {
+        Result = NewNode(ASTNodeType_Address, Token);
         Result->LeftHandSide = Unary(Token->Next, Rest);
     }
     else
@@ -147,13 +159,15 @@ Multiply(token *Token, token **Rest)
     
     for(;;)
     {
+        token *Start = Token;
+        
         if(TokenIs(Token, "*"))
         {
-            Result = NewBinaryNode(ASTNodeType_Multiply, Result, Unary(Token->Next, &Token));
+            Result = NewBinaryNode(ASTNodeType_Multiply, Result, Unary(Token->Next, &Token), Start);
         }
         else if(TokenIs(Token, "/"))
         {
-            Result = NewBinaryNode(ASTNodeType_Divide, Result, Unary(Token->Next, &Token));
+            Result = NewBinaryNode(ASTNodeType_Divide, Result, Unary(Token->Next, &Token), Start);
         }
         else
         {
@@ -173,13 +187,15 @@ Add(token *Token, token **Rest)
     
     for(;;)
     {
+        token *Start = Token;
+        
         if(TokenIs(Token, "+"))
         {
-            Result = NewBinaryNode(ASTNodeType_Add, Result, Multiply(Token->Next, &Token));
+            Result = NewBinaryNode(ASTNodeType_Add, Result, Multiply(Token->Next, &Token), Start);
         }
         else if(TokenIs(Token, "-"))
         {
-            Result = NewBinaryNode(ASTNodeType_Sub, Result, Multiply(Token->Next, &Token));
+            Result = NewBinaryNode(ASTNodeType_Sub, Result, Multiply(Token->Next, &Token), Start);
         }
         else
         {
@@ -199,21 +215,23 @@ Relational(token *Token, token **Rest)
 
     for(;;)
     {
+        token *Start = Token;
+        
         if(TokenIs(Token, "<"))
         {
-            Result = NewBinaryNode(ASTNodeType_LessThan, Result, Add(Token->Next, &Token));
+            Result = NewBinaryNode(ASTNodeType_LessThan, Result, Add(Token->Next, &Token), Start);
         }
         else if(TokenIs(Token, "<="))
         {
-            Result = NewBinaryNode(ASTNodeType_LessEqual, Result, Add(Token->Next, &Token));
+            Result = NewBinaryNode(ASTNodeType_LessEqual, Result, Add(Token->Next, &Token), Start);
         }
         if(TokenIs(Token, ">"))
         {
-            Result = NewBinaryNode(ASTNodeType_LessThan, Add(Token->Next, &Token), Result);
+            Result = NewBinaryNode(ASTNodeType_LessThan, Add(Token->Next, &Token), Result, Start);
         }
         else if(TokenIs(Token, ">="))
         {
-            Result = NewBinaryNode(ASTNodeType_LessEqual, Add(Token->Next, &Token), Result);
+            Result = NewBinaryNode(ASTNodeType_LessEqual, Add(Token->Next, &Token), Result, Start);
         }
         else
         {
@@ -233,13 +251,15 @@ Equality(token *Token, token **Rest)
     
     for(;;)
     {
+        token *Start = Token;
+        
         if(TokenIs(Token, "=="))
         {
-            Result = NewBinaryNode(ASTNodeType_Equal, Result, Relational(Token->Next, &Token));
+            Result = NewBinaryNode(ASTNodeType_Equal, Result, Relational(Token->Next, &Token), Start);
         }
         else if(TokenIs(Token, "!="))
         {
-            Result = NewBinaryNode(ASTNodeType_NotEqual, Result, Relational(Token->Next, &Token));
+            Result = NewBinaryNode(ASTNodeType_NotEqual, Result, Relational(Token->Next, &Token), Start);
         }
         else
         {
@@ -259,7 +279,7 @@ Assign(token *Token, token **Rest)
     
     if(TokenIs(Token, "="))
     {
-        Result = NewBinaryNode(ASTNodeType_Assign, Result, Assign(Token->Next, &Token));
+        Result = NewBinaryNode(ASTNodeType_Assign, Result, Assign(Token->Next, &Token), Token);
     }
     
     *Rest = Token;
@@ -294,7 +314,7 @@ ExpressionStatement(token *Token, token **Rest)
     }
     else
     {
-        Result = NewNode(ASTNodeType_Expression_Statement);
+        Result = NewNode(ASTNodeType_Expression_Statement, Token);
         Result->LeftHandSide = Expression(Token, &Token);
         
         *Rest = AssertNext(Token, ";");
@@ -309,6 +329,7 @@ internal ast_node *CompoundStatement(token *Token, token **Rest);
 //           | "return" Expression ";"
 //           | "if" "(" Expression ")" Statement ("else" Statement)?
 //           | "for" "(" ExpressionStatement Expression? ";" Expression? ")" Statement
+//           | "while" "(" Expression ")" Statement
 //           | Expresion-Statement
 internal ast_node *
 Statement(token *Token, token **Rest)
@@ -321,14 +342,14 @@ Statement(token *Token, token **Rest)
     }
     else if(TokenIs(Token, "return"))
     {
-        Result = NewNode(ASTNodeType_Return);
+        Result = NewNode(ASTNodeType_Return, Token);
         Result->LeftHandSide = Expression(Token->Next, &Token);
         
         Token = AssertNext(Token, ";");
     }
     else if(TokenIs(Token, "if"))
     {
-        Result = NewNode(ASTNodeType_If);
+        Result = NewNode(ASTNodeType_If, Token);
         
         Token = AssertNext(Token->Next, "(");
         Result->Condition = Expression(Token, &Token);
@@ -343,7 +364,7 @@ Statement(token *Token, token **Rest)
     }
     else if(TokenIs(Token, "for"))
     {
-        Result = NewNode(ASTNodeType_For);
+        Result = NewNode(ASTNodeType_For, Token);
         
         Token = AssertNext(Token->Next, "(");
         Result->Init = ExpressionStatement(Token, &Token);
@@ -362,6 +383,16 @@ Statement(token *Token, token **Rest)
         
         Result->Then = Statement(Token, &Token);
     }
+    else if(TokenIs(Token, "while"))
+    {
+        Result = NewNode(ASTNodeType_For, Token);
+        
+        Token = AssertNext(Token->Next, "(");
+        Result->Condition = Expression(Token, &Token);
+        
+        Token = AssertNext(Token, ")");
+        Result->Then = Statement(Token, &Token);
+    }    
     else
     {
         Result = ExpressionStatement(Token, &Token);
@@ -376,7 +407,7 @@ Statement(token *Token, token **Rest)
 internal ast_node *
 CompoundStatement(token *Token, token **Rest)
 {
-    ast_node *Result = NewNode(ASTNodeType_Block);
+    ast_node *Result = NewNode(ASTNodeType_Block, Token);
     
     ast_node Head = {0};
     ast_node *Current = &Head;
@@ -463,6 +494,9 @@ char *NodeTypes[] =
     "NotEqu",
     "LessTh",
     "LessEq",
+
+    "Derefe",
+    "Addres",
 
     "Assign",
     

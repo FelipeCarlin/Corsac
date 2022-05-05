@@ -57,18 +57,29 @@ AlignTo(int32 Value, uint32 Align)
     return Result;
 }
 
+internal void GenerateExpression(ast_node *Node);
+
 // Compute the absolute address of a given node.
 // It's an error if a given node does not reside in memory.
 inline void
 GenerateAddress(ast_node *Node)
 {
-    if(Node->NodeType == ASTNodeType_Variable)
+    switch(Node->NodeType)
     {
-        PushString(GlobalFileArena, "  lea rax, [rbp + %d]\n", Node->Variable->StackBaseOffset);
-    }
-    else
-    {
-        Error("not an lvalue");
+        case ASTNodeType_Variable:
+        {
+            PushString(GlobalFileArena, "  lea rax, [rbp + %d]\n", Node->Variable->StackBaseOffset);
+        } break;
+        
+        case ASTNodeType_Dereference:
+        {
+            GenerateExpression(Node->LeftHandSide);
+        } break;
+        
+        default:
+        {
+            Error("not an lvalue");
+        } break;
     }
 }
 
@@ -94,6 +105,16 @@ GenerateExpression(ast_node *Node)
         {
             GenerateAddress(Node);
             PushString(GlobalFileArena, "  mov rax, [rax]\n");
+        } break;
+
+        case ASTNodeType_Dereference:
+        {
+            GenerateExpression(Node->LeftHandSide);
+            printf("  mov rax, [rax]\n");
+        } break;
+        case ASTNodeType_Address:
+        {
+            GenerateAddress(Node->LeftHandSide);
         } break;
         
         case ASTNodeType_Assign:
@@ -216,7 +237,11 @@ GenerateStatement(ast_node *Node)
         case ASTNodeType_For:
         {
             uint32 ID = UniqueNumber();
-            GenerateStatement(Node->Init);
+
+            if(Node->Init)
+            {
+                GenerateStatement(Node->Init);
+            }
             
             PushString(GlobalFileArena, ".L.begin.%d:\n", ID);
             if(Node->Condition)

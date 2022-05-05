@@ -55,6 +55,9 @@ typedef enum ast_node_type
     ASTNodeType_NotEqual,                // Comparison !=
     ASTNodeType_LessThan,                // Comparison <
     ASTNodeType_LessEqual,               // Comparison <=
+
+    ASTNodeType_Dereference,             // Unary *
+    ASTNodeType_Address,                 // Unary &
     
     ASTNodeType_Assign,                  // =
     
@@ -66,7 +69,7 @@ typedef enum ast_node_type
 
     ASTNodeType_Return,                  // "return" statement
     ASTNodeType_If,                      // "if" statement
-    ASTNodeType_For,                     // "for" statement 
+    ASTNodeType_For,                     // "for" statement
     
     ASTNodeType_Count,                   // Internal use, boundry checking
 } ast_node_type;

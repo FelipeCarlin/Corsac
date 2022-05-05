@@ -259,6 +259,7 @@ Tokenize(loaded_file *File)
             "if",
             "else",
             "for",
+            "while",
         };
     
     for(token *Token = Head.Next;
