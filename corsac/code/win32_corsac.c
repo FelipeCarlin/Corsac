@@ -130,6 +130,17 @@ WarningInToken(token *Token, char *Format, ...)
     va_end(AP);
 }
 
+internal uint32
+Win32GetTime()
+{
+    uint32 Result = 0;
+    
+    time_t Time = time(0);
+    Result = (uint32)Time;
+    
+    return Result;
+}
+
 internal loaded_file
 Win32ReadEntireFile(char *Filename)
 {
@@ -205,6 +216,16 @@ typedef struct memory_arena
     memory_index Size;
     memory_index Used;
 } memory_arena;
+#define PushStruct(Arena, Type) (Type*)PushSize_(Arena, sizeof(Type))
+#define PushArray(Arena, Count, Type) (Type*)PushSize_(Arena, (Count)*sizeof(Type))
+#define PushSize(Arena, Size) PushSize_(Arena, Size)
+inline void* PushSize_(memory_arena* Arena, memory_index Size)
+{
+    Assert((Arena->Used + Size) <= Arena->Size);
+    void *Result = (uint8 *)Arena->Memory + Arena->Used;
+    Arena->Used += Size;
+    return Result;
+}
 
 internal memory_arena
 Win32AllocateArena(memory_index Size)

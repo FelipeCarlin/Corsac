@@ -25,7 +25,7 @@ typedef enum object_storage
 typedef struct object
 {
     char *Name;
-
+    
     object_type Type;
     object_storage Storage;
     
@@ -78,7 +78,7 @@ typedef enum ast_node_type
     
     ASTNodeType_Variable,                // Variable
 //    ASTNodeType_Function,                // Function definition
-
+    
     ASTNodeType_Return,                  // "return" statement
     ASTNodeType_If,                      // "if" statement
     ASTNodeType_For,                     // "for" statement
